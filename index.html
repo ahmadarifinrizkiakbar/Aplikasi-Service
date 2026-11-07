@@ -1074,9 +1074,6 @@
 
         initApp() {
           this.loadData();
-          if (!this.services || this.services.length === 0) {
-            this.loadSampleData();
-          }
         },
 
         // --- Storage Management ---
@@ -1085,10 +1082,18 @@
             const savedStore = localStorage.getItem('hp_service_store');
             if (savedStore) this.store = JSON.parse(savedStore);
 
-            const savedServices = localStorage.getItem('hp_service_items');
-            if (savedServices) this.services = JSON.parse(savedServices);
+            const isInitialized = localStorage.getItem('hp_service_initialized');
+            if (!isInitialized) {
+              // Pertama kali buka aplikasi, muat sample data 1x saja
+              this.loadSampleData();
+            } else {
+              // Jika sudah diinisialisasi, baca data dari localStorage (meskipun kosong [])
+              const savedServices = localStorage.getItem('hp_service_items');
+              this.services = savedServices ? JSON.parse(savedServices) : [];
+            }
           } catch (e) {
             console.error('Failed to parse localStorage data', e);
+            this.services = [];
           }
         },
 
@@ -1096,6 +1101,7 @@
           try {
             localStorage.setItem('hp_service_store', JSON.stringify(this.store));
             localStorage.setItem('hp_service_items', JSON.stringify(this.services));
+            localStorage.setItem('hp_service_initialized', 'true');
           } catch (e) {
             console.error('Failed to save to localStorage', e);
           }
@@ -1457,6 +1463,7 @@
               technician: 'Andi (Hardware)'
             }
           ];
+          localStorage.setItem('hp_service_initialized', 'true');
           this.saveData();
           this.showToast('Sample data telah dimuat!');
         },
