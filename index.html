@@ -1720,3 +1720,11 @@
   </script>
 </body>
 </html>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('Service Worker Terdaftar!'))
+      .catch(err => console.log('Gagal:', err));
+  }
+</script>
+
