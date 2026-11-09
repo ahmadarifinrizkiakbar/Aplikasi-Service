@@ -1,8 +1,9 @@
 {
-  "id": "/aplikasi-cetak",
+  "id": "aplikasi-cetak-saya",
   "name": "Aplikasi Cetak Saya",
   "short_name": "CetakApp",
-  "start_url": "./index.html",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
