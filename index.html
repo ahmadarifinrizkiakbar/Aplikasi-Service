@@ -1397,10 +1397,8 @@
           if (store.footerNote) {
             addStr(store.footerNote + '\n');
           }
-          addStr('--------------------------------\n');
-          addStr('*** PRJ-R58D & RP210A Thermal ***\n\n\n\n');
-
-          addCmd([0x1B, 0x64, 0x04]); // Feed 4 lines
+                
+          addCmd([0x1B, 0x64, 0x01]); // Feed 4 lines
 
           return new Uint8Array(bytes);
         },
