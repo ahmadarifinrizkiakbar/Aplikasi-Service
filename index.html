@@ -3,1215 +3,701 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aplikasi Manajemen Service HP - Struk 58mm & Excel</title>
-
-  <!-- Tailwind CSS -->
+  <title>Aplikasi Service HP & Kasir Nota Thermal</title>
+  
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- FontAwesome Icons -->
+  <!-- Font Awesome Icons CDN -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-  <!-- SheetJS untuk Export Excel -->
+  <!-- Alpine.js CDN -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- SheetJS (xlsx) CDN for Export Excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <!-- Google Fonts: Inter & Roboto Mono (Optimasi Printer Struk 58mm) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-
-  <!-- Alpine.js untuk Reactive State Management -->
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
-
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-            mono: ['Roboto Mono', 'monospace'],
-          },
-          colors: {
-            brand: {
-              50: '#f0f9ff',
-              100: '#e0f2fe',
-              500: '#0284c7',
-              600: '#0369a1',
-              700: '#075985',
-              800: '#0c4a6e',
-            }
-          }
-        }
-      }
-    }
-  </script>
-
   <style>
-    /* Styling Cetak Khusus Printer Struk 58mm (Panda PRJ-R58D) */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* CSS Print Isolation (58mm Thermal Receipt) */
     @media print {
-      body * {
-        visibility: hidden;
+      body > *:not(#printArea) {
+        display: none !important;
       }
-      #printable-receipt-wrapper, #printable-receipt-wrapper * {
-        visibility: visible;
-      }
-      #printable-receipt-wrapper {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 58mm;
-        margin: 0;
-        padding: 0;
+      #printArea {
+        display: block !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
       @page {
         size: 58mm auto;
         margin: 0;
       }
     }
-
-    /* Custom Scrollbar */
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: #f1f5f9;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #94a3b8;
-    }
   </style>
 </head>
+<body class="bg-slate-100 text-slate-800 min-h-screen" x-data="serviceApp()" x-init="init()">
 
-<body class="bg-slate-100 font-sans text-slate-800 min-h-screen flex flex-col" x-data="serviceApp()" x-init="initApp()">
+  <!-- Dedicated Print Area Container (Prevents page clutter on standard browser print) -->
+  <div id="printArea" class="hidden"></div>
 
-  <!-- Toast Notification Floating -->
-  <div x-show="toast.show" 
-       x-transition:enter="transition ease-out duration-300 transform"
-       x-transition:enter-start="opacity-0 translate-y-2"
-       x-transition:enter-end="opacity-100 translate-y-0"
-       x-transition:leave="transition ease-in duration-200 transform"
-       x-transition:leave-start="opacity-100 translate-y-0"
-       x-transition:leave-end="opacity-0 translate-y-2"
-       class="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 border border-slate-700"
+  <!-- Toast Notification Feedback -->
+  <div x-show="showToastMsg" 
+       x-transition:enter="transition ease-out duration-300"
+       x-transition:enter-start="opacity-0 transform translate-y-4"
+       x-transition:enter-end="opacity-100 transform translate-y-0"
+       x-transition:leave="transition ease-in duration-200"
+       x-transition:leave-start="opacity-100 transform translate-y-0"
+       x-transition:leave-end="opacity-0 transform translate-y-4"
+       class="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700"
        style="display: none;">
-    <i :class="toast.icon || 'fa-solid fa-circle-check text-emerald-400'" class="text-xl"></i>
-    <span class="text-sm font-medium" x-text="toast.message"></span>
+    <i :class="toastIcon"></i>
+    <span x-text="toastMessage" class="text-sm font-medium"></span>
   </div>
 
-  <!-- Top Navigation Bar -->
-  <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-30">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-16">
-        <!-- Logo & Store Name -->
-        <div class="flex items-center space-x-3 cursor-pointer" @click="activeTab = 'dashboard'">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-md">
-            <i class="fa-solid fa-mobile-screen-button text-xl"></i>
-          </div>
-          <div>
-            <h1 class="font-bold text-lg leading-tight tracking-tight text-white flex items-center gap-2">
-              <span x-text="store.name"></span>
-              <span class="bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full font-mono border border-cyan-500/30">PRJ-R58D Ready</span>
-            </h1>
-            <p class="text-xs text-slate-400" x-text="store.headerNote"></p>
-          </div>
+  <!-- Header & Navigation Bar -->
+  <header class="bg-indigo-700 text-white shadow-lg sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-600 border border-indigo-400 flex items-center justify-center text-xl shadow-inner">
+          <i class="fa-solid fa-mobile-screen-button"></i>
         </div>
-
-        <!-- Desktop Navigation Tabs -->
-        <nav class="hidden md:flex space-x-1">
-          <button @click="activeTab = 'dashboard'" :class="activeTab === 'dashboard' ? 'bg-slate-800 text-cyan-400 font-semibold' : 'text-slate-300 hover:bg-slate-800/60'" class="px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition">
-            <i class="fa-solid fa-chart-pie"></i>
-            <span>Dashboard</span>
-          </button>
-          <button @click="openNewForm()" :class="activeTab === 'input' ? 'bg-slate-800 text-cyan-400 font-semibold' : 'text-slate-300 hover:bg-slate-800/60'" class="px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition">
-            <i class="fa-solid fa-circle-plus"></i>
-            <span>Input Service Baru</span>
-          </button>
-          <button @click="activeTab = 'list'" :class="activeTab === 'list' ? 'bg-slate-800 text-cyan-400 font-semibold' : 'text-slate-300 hover:bg-slate-800/60'" class="px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition relative">
-            <i class="fa-solid fa-list-check"></i>
-            <span>Daftar Service</span>
-            <span x-show="activeQueueCount > 0" class="bg-amber-500 text-slate-950 text-[10px] font-bold px-1.5 py-0.5 rounded-full" x-text="activeQueueCount"></span>
-          </button>
-          <button @click="activeTab = 'reports'" :class="activeTab === 'reports' ? 'bg-slate-800 text-cyan-400 font-semibold' : 'text-slate-300 hover:bg-slate-800/60'" class="px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition">
-            <i class="fa-solid fa-file-excel text-emerald-400"></i>
-            <span>Laporan & Excel</span>
-          </button>
-          <button @click="activeTab = 'settings'" :class="activeTab === 'settings' ? 'bg-slate-800 text-cyan-400 font-semibold' : 'text-slate-300 hover:bg-slate-800/60'" class="px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition">
-            <i class="fa-solid fa-gears"></i>
-            <span>Pengaturan Toko</span>
-          </button>
-        </nav>
+        <div>
+          <h1 class="text-lg font-bold tracking-wide leading-tight" x-text="storeConfig.name"></h1>
+          <p class="text-xs text-indigo-200" x-text="storeConfig.slogan"></p>
+        </div>
       </div>
-    </div>
-
-    <!-- Mobile Navigation Bar Bottom -->
-    <div class="md:hidden flex justify-around bg-slate-950 border-t border-slate-800 py-2 px-1 text-xs">
-      <button @click="activeTab = 'dashboard'" :class="activeTab === 'dashboard' ? 'text-cyan-400 font-bold' : 'text-slate-400'" class="flex flex-col items-center p-1">
-        <i class="fa-solid fa-chart-pie text-base"></i>
-        <span class="text-[10px] mt-0.5">Home</span>
-      </button>
-      <button @click="openNewForm()" :class="activeTab === 'input' ? 'text-cyan-400 font-bold' : 'text-slate-400'" class="flex flex-col items-center p-1">
-        <i class="fa-solid fa-circle-plus text-base"></i>
-        <span class="text-[10px] mt-0.5">+ Baru</span>
-      </button>
-      <button @click="activeTab = 'list'" :class="activeTab === 'list' ? 'text-cyan-400 font-bold' : 'text-slate-400'" class="flex flex-col items-center p-1 relative">
-        <i class="fa-solid fa-list-check text-base"></i>
-        <span class="text-[10px] mt-0.5">Daftar</span>
-        <span x-show="activeQueueCount > 0" class="absolute -top-1 right-2 bg-amber-500 text-slate-950 text-[9px] font-bold px-1 rounded-full" x-text="activeQueueCount"></span>
-      </button>
-      <button @click="activeTab = 'reports'" :class="activeTab === 'reports' ? 'text-cyan-400 font-bold' : 'text-slate-400'" class="flex flex-col items-center p-1">
-        <i class="fa-solid fa-file-excel text-base text-emerald-400"></i>
-        <span class="text-[10px] mt-0.5">Laporan</span>
-      </button>
-      <button @click="activeTab = 'settings'" :class="activeTab === 'settings' ? 'text-cyan-400 font-bold' : 'text-slate-400'" class="flex flex-col items-center p-1">
-        <i class="fa-solid fa-gears text-base"></i>
-        <span class="text-[10px] mt-0.5">Pengaturan</span>
-      </button>
+      
+      <div class="flex items-center gap-2 flex-wrap">
+        <button @click="openNewForm()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm transition">
+          <i class="fa-solid fa-plus"></i> Service Baru
+        </button>
+        <button @click="exportExcel()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition">
+          <i class="fa-solid fa-file-excel text-emerald-300"></i> Export Excel
+        </button>
+        <button @click="showStoreModal = true" class="bg-indigo-800 hover:bg-indigo-900 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm transition">
+          <i class="fa-solid fa-gear"></i> Pengaturan
+        </button>
+      </div>
     </div>
   </header>
 
-  <!-- Main Content Wrapper -->
-  <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+  <!-- Main Content Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-    <!-- TAB 1: DASHBOARD -->
-    <div x-show="activeTab === 'dashboard'" class="space-y-6">
-      
-      <!-- Welcome Banner -->
-      <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-6 shadow-xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <h2 class="text-2xl font-bold tracking-tight">Selamat Datang di Portal Service</h2>
-          <p class="text-slate-300 text-sm mt-1">Kelola perbaikan HP, cetak nota thermal 58mm &amp; pantau omset toko secara akurat.</p>
+    <!-- Financial & Operational Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
+          <span>TOTAL UNIT</span>
+          <i class="fa-solid fa-boxes-stacked text-indigo-500"></i>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <button @click="openNewForm()" class="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center space-x-2 shadow-lg transition">
-            <i class="fa-solid fa-plus"></i>
-            <span>Input Service Baru</span>
-          </button>
-          <button @click="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center space-x-2 shadow-lg transition">
-            <i class="fa-solid fa-file-excel"></i>
-            <span>Export Excel</span>
-          </button>
+        <div class="text-2xl font-bold text-slate-800" x-text="stats.totalUnit"></div>
+        <div class="text-xs text-slate-500 mt-1">
+          <span class="text-amber-600 font-semibold" x-text="stats.antrean"></span> Antrean / Proses
         </div>
       </div>
 
-      <!-- Financial & Stat Cards -->
-      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <!-- Total Masuk -->
-        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-          <div class="flex items-center justify-between text-slate-500 mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider">Total Service</span>
-            <i class="fa-solid fa-boxes-packing text-blue-500"></i>
-          </div>
-          <div class="text-2xl font-bold text-slate-800" x-text="stats.total"></div>
-          <p class="text-[11px] text-slate-500 mt-1">Seluruh Data</p>
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
+          <span>OMSET SELESAI</span>
+          <i class="fa-solid fa-money-bill-wave text-emerald-500"></i>
         </div>
-
-        <!-- Dalam Proses -->
-        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-          <div class="flex items-center justify-between text-slate-500 mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider">Dalam Proses</span>
-            <i class="fa-solid fa-microchip text-indigo-500"></i>
-          </div>
-          <div class="text-2xl font-bold text-indigo-600" x-text="stats.inProgress"></div>
-          <p class="text-[11px] text-slate-500 mt-1">Antrean &amp; Repair</p>
-        </div>
-
-        <!-- Ready Ambil -->
-        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-          <div class="flex items-center justify-between text-slate-500 mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider">Siap Diambil</span>
-            <i class="fa-solid fa-circle-check text-emerald-500"></i>
-          </div>
-          <div class="text-2xl font-bold text-emerald-600" x-text="stats.ready"></div>
-          <p class="text-[11px] text-slate-500 mt-1">Menunggu Pelanggan</p>
-        </div>
-
-        <!-- Selesai & Lunas -->
-        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-          <div class="flex items-center justify-between text-slate-500 mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider">Sudah Diambil</span>
-            <i class="fa-solid fa-user-check text-teal-600"></i>
-          </div>
-          <div class="text-2xl font-bold text-teal-700" x-text="stats.completed"></div>
-          <p class="text-[11px] text-slate-500 mt-1">Lunas &amp; Selesai</p>
-        </div>
-
-        <!-- Omset Gross -->
-        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-          <div class="flex items-center justify-between text-slate-500 mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider">Total Omset</span>
-            <i class="fa-solid fa-wallet text-cyan-600"></i>
-          </div>
-          <div class="text-base font-bold text-slate-900 truncate" x-text="formatRupiah(stats.totalRevenue)"></div>
-          <p class="text-[11px] text-slate-500 mt-1">Penerimaan Total</p>
-        </div>
-
-        <!-- Est Laba Bersih -->
-        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 bg-gradient-to-br from-emerald-50 to-white">
-          <div class="flex items-center justify-between text-slate-500 mb-2">
-            <span class="text-xs font-semibold uppercase tracking-wider text-emerald-800">Est. Laba Bersih</span>
-            <i class="fa-solid fa-sack-dollar text-emerald-600"></i>
-          </div>
-          <div class="text-base font-bold text-emerald-700 truncate" x-text="formatRupiah(stats.netProfit)"></div>
-          <p class="text-[11px] text-emerald-600 mt-1">Total Biaya - Modal</p>
-        </div>
+        <div class="text-xl font-bold text-emerald-600" x-text="'Rp ' + stats.omset.toLocaleString('id-ID')"></div>
+        <div class="text-xs text-slate-500 mt-1">Total pendapatan kotor</div>
       </div>
 
-      <!-- Live Service Queue Preview -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h3 class="font-bold text-lg text-slate-800 flex items-center gap-2">
-              <i class="fa-solid fa-clock-rotate-left text-cyan-600"></i>
-              <span>Antrean Service Aktif</span>
-            </h3>
-            <p class="text-xs text-slate-500">Unit HP yang sedang membutuhkan perbaikan atau pengecekan</p>
-          </div>
-          <button @click="activeTab = 'list'" class="text-xs text-cyan-600 hover:text-cyan-700 font-semibold flex items-center gap-1">
-            <span>Lihat Semua Data</span>
-            <i class="fa-solid fa-chevron-right text-[10px]"></i>
-          </button>
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
+          <span>ESTIMASI LABA</span>
+          <i class="fa-solid fa-chart-line text-blue-500"></i>
         </div>
+        <div class="text-xl font-bold text-blue-600" x-text="'Rp ' + stats.labaNet.toLocaleString('id-ID')"></div>
+        <div class="text-xs text-slate-500 mt-1">Omset dikurangi modal sparepart</div>
+      </div>
 
-        <div class="divide-y divide-slate-100">
-          <template x-for="item in activeQueueServices" :key="item.id">
-            <div class="p-4 hover:bg-slate-50 transition flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div class="flex items-start space-x-3">
-                <div class="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-mono text-xs font-bold shrink-0">
-                  <i class="fa-solid fa-mobile-button text-lg text-cyan-600"></i>
-                </div>
-                <div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded" x-text="item.id"></span>
-                    <strong class="text-sm text-slate-800" x-text="item.phoneModel"></strong>
-                    <span class="text-xs text-slate-500" x-text="'(' + item.customerName + ')'"></span>
-                  </div>
-                  <p class="text-xs text-slate-600 mt-1 font-medium" x-text="'Kendala: ' + item.damage"></p>
-                  <p class="text-[11px] text-slate-400 mt-0.5" x-text="'Masuk: ' + formatDate(item.date) + ' • Teknisi: ' + item.technician"></p>
-                </div>
-              </div>
-              <div class="flex items-center justify-between md:justify-end gap-3 border-t md:border-t-0 pt-2 md:pt-0">
-                <span :class="getStatusBadgeClass(item.status)" class="px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5" x-html="getStatusBadgeHTML(item.status)"></span>
-                <button @click="openReceiptModal(item, 'penerimaan')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1">
-                  <i class="fa-solid fa-print"></i>
-                  <span>Struk 58mm</span>
-                </button>
-              </div>
-            </div>
-          </template>
-
-          <template x-if="activeQueueServices.length === 0">
-            <div class="p-8 text-center text-slate-400">
-              <i class="fa-solid fa-clipboard-check text-4xl mb-2 text-slate-300"></i>
-              <p class="text-sm">Tidak ada antrean aktif saat ini. Semua unit telah selesai / diambil.</p>
-            </div>
-          </template>
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
+          <span>PIUTANG / ANTREAN</span>
+          <i class="fa-solid fa-hand-holding-dollar text-amber-500"></i>
         </div>
+        <div class="text-xl font-bold text-amber-600" x-text="'Rp ' + stats.piutang.toLocaleString('id-ID')"></div>
+        <div class="text-xs text-slate-500 mt-1">Sisa bayar unit diproses</div>
       </div>
     </div>
 
-    <!-- TAB 2: INPUT SERVICE BARU / EDIT FORM -->
-    <div x-show="activeTab === 'input'" class="space-y-6">
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
-          <div>
-            <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <i class="fa-solid fa-file-signature text-cyan-600"></i>
-              <span x-text="isEditMode ? 'Edit Data Service: ' + form.id : 'Penerimaan Unit Service Baru'"></span>
-            </h2>
-            <p class="text-xs text-slate-500 mt-0.5">Isi data pelanggan, spesifikasi perangkat, kelengkapan, &amp; estimasi biaya dengan teliti.</p>
-          </div>
-          <button @click="activeTab = 'list'" class="text-xs text-slate-500 hover:text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg">
-            <i class="fa-solid fa-xmark mr-1"></i> Batal
-          </button>
-        </div>
+    <!-- Filter & Search Controls -->
+    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="relative w-full sm:w-80">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+        <input type="text" x-model="searchQuery" placeholder="Cari Nota, Nama, WA, Tipe HP..." class="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      </div>
 
-        <form @submit.prevent="saveService()">
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-            <!-- Kolom 1: Informasi Pelanggan & Nota -->
-            <div class="space-y-4">
-              <h3 class="font-bold text-slate-800 text-sm border-b border-slate-100 pb-2 flex items-center gap-2">
-                <i class="fa-solid fa-user-tag text-cyan-600"></i> Data Pelanggan &amp; Nota
-              </h3>
-              
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Nomor Nota (Otomatis)</label>
-                <input type="text" x-model="form.id" readonly class="w-full bg-slate-100 border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-700 cursor-not-allowed">
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Tanggal Masuk <span class="text-red-500">*</span></label>
-                <input type="date" x-model="form.date" required class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Pelanggan <span class="text-red-500">*</span></label>
-                <input type="text" x-model="form.customerName" required placeholder="Contoh: Budi Santoso" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Nomor WhatsApp / Telp <span class="text-red-500">*</span></label>
-                <div class="relative">
-                  <span class="absolute left-3 top-2.5 text-xs text-slate-400">+62 /</span>
-                  <input type="text" x-model="form.customerWa" required placeholder="81234567890" class="w-full border border-slate-300 rounded-xl pl-14 pr-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none font-mono">
-                </div>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Teknisi Penanggung Jawab</label>
-                <select x-model="form.technician" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-                  <template x-for="tech in store.technicians" :key="tech">
-                    <option :value="tech" x-text="tech"></option>
-                  </template>
-                </select>
-              </div>
-            </div>
-
-            <!-- Kolom 2: Informasi HP & Keamanan -->
-            <div class="space-y-4">
-              <h3 class="font-bold text-slate-800 text-sm border-b border-slate-100 pb-2 flex items-center gap-2">
-                <i class="fa-solid fa-mobile text-cyan-600"></i> Detail Perangkat HP
-              </h3>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Merk &amp; Tipe HP <span class="text-red-500">*</span></label>
-                <input type="text" x-model="form.phoneModel" required placeholder="Contoh: Samsung Galaxy A52 / iPhone 11" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Nomor IMEI / Serial Number (Opsional)</label>
-                <input type="text" x-model="form.imei" placeholder="354891029384751" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-              </div>
-
-              <!-- Interactive Pattern / PIN Picker -->
-              <div>
-                <div class="flex items-center justify-between mb-1">
-                  <label class="text-xs font-semibold text-slate-700">Pola / PIN Kunci Layar</label>
-                  <button type="button" @click="clearPattern()" class="text-[10px] text-red-500 hover:underline">Clear Pola</button>
-                </div>
-                
-                <input type="text" x-model="form.pattern" placeholder="Ketik PIN atau klik titik pola..." class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-cyan-500 focus:outline-none mb-2">
-
-                <!-- Visual 3x3 Grid Pattern Picker -->
-                <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <p class="text-[10px] text-slate-500 text-center mb-2">Klik urutan titik pola (1 s/d 9):</p>
-                  <div class="grid grid-cols-3 gap-2 w-36 mx-auto">
-                    <template x-for="n in 9" :key="n">
-                      <button type="button" 
-                              @click="addPatternDot(n)" 
-                              class="w-10 h-10 rounded-full border border-slate-300 bg-white hover:bg-cyan-100 hover:border-cyan-400 font-bold text-xs text-slate-700 transition flex items-center justify-center shadow-sm active:scale-95">
-                        <span x-text="n"></span>
-                      </button>
-                    </template>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-2">Kelengkapan yang Ditinggal:</label>
-                <div class="grid grid-cols-2 gap-2 text-xs">
-                  <template x-for="acc in availableAccessories" :key="acc">
-                    <label class="flex items-center space-x-2 bg-slate-50 p-2 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100">
-                      <input type="checkbox" :value="acc" x-model="form.accessories" class="rounded text-cyan-600 focus:ring-cyan-500">
-                      <span class="text-slate-700 font-medium" x-text="acc"></span>
-                    </label>
-                  </template>
-                </div>
-              </div>
-            </div>
-
-            <!-- Kolom 3: Damage & Financials -->
-            <div class="space-y-4">
-              <h3 class="font-bold text-slate-800 text-sm border-b border-slate-100 pb-2 flex items-center gap-2">
-                <i class="fa-solid fa-wrench text-cyan-600"></i> Kerusakan &amp; Biaya
-              </h3>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Deskripsi Kerusakan <span class="text-red-500">*</span></label>
-                <textarea x-model="form.damage" required rows="2" placeholder="Contoh: Touchscreen sebagian tidak merespon, baterai drop cepat" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none"></textarea>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Catatan Kondisi Fisik HP</label>
-                <textarea x-model="form.physicalCondition" rows="2" placeholder="Contoh: Layar baret halus, bezel lecet di sudut kanan bawah" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none"></textarea>
-              </div>
-
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-xs font-semibold text-slate-700 mb-1">Estimasi Total Biaya (Rp) <span class="text-red-500">*</span></label>
-                  <input type="number" x-model.number="form.cost" min="0" required placeholder="150000" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-                </div>
-
-                <div>
-                  <label class="block text-xs font-semibold text-slate-700 mb-1">Modal Sparepart (Rp)</label>
-                  <input type="number" x-model.number="form.modal" min="0" placeholder="75000" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-                </div>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Uang Muka / DP Terbayar (Rp)</label>
-                <input type="number" x-model.number="form.dp" min="0" placeholder="0" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold text-emerald-700 focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-              </div>
-
-              <!-- Computed Balance -->
-              <div class="bg-cyan-50 p-3 rounded-xl border border-cyan-200 flex items-center justify-between">
-                <span class="text-xs font-bold text-cyan-900">Est. Sisa Tagihan:</span>
-                <span class="font-mono font-bold text-sm text-cyan-800" x-text="formatRupiah((form.cost || 0) - (form.dp || 0))"></span>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Status Pengerjaan</label>
-                <select x-model="form.status" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-                  <option value="diterima">📥 Diterima / Antrean</option>
-                  <option value="pengecekan">🔍 Pengecekan / Diagnosis</option>
-                  <option value="sparepart">📦 Menunggu Sparepart</option>
-                  <option value="proses">🛠️ Dalam Perbaikan</option>
-                  <option value="selesai">✅ Selesai (Bisa Diambil)</option>
-                  <option value="diambil">🤝 Diambil &amp; Lunas</option>
-                  <option value="batal">❌ Dibatalkan / Gagal</option>
-                </select>
-              </div>
-
-            </div>
-          </div>
-
-          <!-- Form Buttons -->
-          <div class="mt-8 pt-4 border-t border-slate-200 flex flex-wrap items-center justify-end gap-3">
-            <button type="button" @click="activeTab = 'list'" class="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-100 transition">
-              Batal
-            </button>
-            <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2.5 rounded-xl text-sm font-semibold shadow-lg transition flex items-center gap-2">
-              <i class="fa-solid fa-floppy-disk"></i>
-              <span x-text="isEditMode ? 'Update Data Service' : 'Simpan Service &amp; Cetak'"></span>
-            </button>
-          </div>
-        </form>
+      <div class="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+        <button @click="statusFilter = 'all'" :class="statusFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition">
+          Semua
+        </button>
+        <button @click="statusFilter = 'antrean'" :class="statusFilter === 'antrean' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'" class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition">
+          Antrean
+        </button>
+        <button @click="statusFilter = 'proses'" :class="statusFilter === 'proses' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'" class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition">
+          Proses
+        </button>
+        <button @click="statusFilter = 'selesai'" :class="statusFilter === 'selesai' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'" class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition">
+          Selesai
+        </button>
+        <button @click="statusFilter = 'diambil'" :class="statusFilter === 'diambil' ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-700 hover:bg-purple-100'" class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition">
+          Diambil
+        </button>
+        <button @click="statusFilter = 'batal'" :class="statusFilter === 'batal' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-700 hover:bg-red-100'" class="px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition">
+          Batal
+        </button>
       </div>
     </div>
 
-    <!-- TAB 3: DAFTAR SERVICE & FILTER -->
-    <div x-show="activeTab === 'list'" class="space-y-6">
-      
-      <!-- Top Actions & Search Bar -->
-      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div class="relative flex-grow">
-            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400"></i>
-            <input type="text" x-model="searchQuery" placeholder="Cari No. Nota, Nama Pelanggan, Tipe HP, atau IMEI..." class="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-          </div>
-          <div class="flex items-center gap-2 flex-wrap">
-            <button @click="openNewForm()" class="bg-cyan-500 hover:bg-cyan-600 text-slate-950 font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center gap-2 transition">
-              <i class="fa-solid fa-plus"></i>
-              <span>Tambah Service</span>
-            </button>
-            <button @click="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center gap-2 transition">
-              <i class="fa-solid fa-file-excel"></i>
-              <span>Export Excel</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Status Filter Tabs -->
-        <div class="flex items-center gap-1 overflow-x-auto pb-1 pt-2 border-t border-slate-100 text-xs">
-          <button @click="filterStatus = 'all'" :class="filterStatus === 'all' ? 'bg-slate-900 text-white font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition">
-            Semua (<span x-text="services.length"></span>)
-          </button>
-          <button @click="filterStatus = 'diterima'" :class="filterStatus === 'diterima' ? 'bg-blue-600 text-white font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition">
-            Antrean (<span x-text="countByStatus('diterima')"></span>)
-          </button>
-          <button @click="filterStatus = 'proses'" :class="filterStatus === 'proses' ? 'bg-purple-600 text-white font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition">
-            Dalam Perbaikan (<span x-text="countByStatus('proses') + countByStatus('pengecekan') + countByStatus('sparepart')"></span>)
-          </button>
-          <button @click="filterStatus = 'selesai'" :class="filterStatus === 'selesai' ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition">
-            Siap Diambil (<span x-text="countByStatus('selesai')"></span>)
-          </button>
-          <button @click="filterStatus = 'diambil'" :class="filterStatus === 'diambil' ? 'bg-teal-700 text-white font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition">
-            Diambil &amp; Lunas (<span x-text="countByStatus('diambil')"></span>)
-          </button>
-          <button @click="filterStatus = 'batal'" :class="filterStatus === 'batal' ? 'bg-red-600 text-white font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'" class="px-3 py-1.5 rounded-lg whitespace-nowrap transition">
-            Dibatalkan (<span x-text="countByStatus('batal')"></span>)
-          </button>
-        </div>
-      </div>
-
-      <!-- Service List Table -->
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse">
-            <thead>
-              <tr class="bg-slate-900 text-white text-xs uppercase font-semibold tracking-wider">
-                <th class="p-3.5 pl-4">No. Nota / Masuk</th>
-                <th class="p-3.5">Pelanggan &amp; WA</th>
-                <th class="p-3.5">Perangkat &amp; IMEI</th>
-                <th class="p-3.5">Kerusakan</th>
-                <th class="p-3.5">Biaya &amp; Sisa</th>
-                <th class="p-3.5">Status Pengerjaan</th>
-                <th class="p-3.5 pr-4 text-center">Aksi Cepat</th>
+    <!-- Service Transactions Data Table -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-xs uppercase">
+              <th class="p-3">No Nota / Tgl</th>
+              <th class="p-3">Pelanggan</th>
+              <th class="p-3">Unit HP / Damage</th>
+              <th class="p-3">Teknisi</th>
+              <th class="p-3">Biaya & DP</th>
+              <th class="p-3">Status</th>
+              <th class="p-3 text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <template x-for="item in filteredServices" :key="item.id">
+              <tr class="hover:bg-slate-50 transition">
+                <td class="p-3">
+                  <div class="font-bold text-slate-800 font-mono" x-text="item.id"></div>
+                  <div class="text-xs text-slate-400" x-text="item.tanggalMasuk"></div>
+                </td>
+                <td class="p-3">
+                  <div class="font-semibold text-slate-800" x-text="item.nama"></div>
+                  <div class="text-xs text-indigo-600 font-medium" x-text="item.phone"></div>
+                </td>
+                <td class="p-3">
+                  <div class="font-medium text-slate-800" x-text="item.tipeHp"></div>
+                  <div class="text-xs text-slate-500 truncate max-w-xs" x-text="item.kerusakan"></div>
+                  <template x-if="item.patternCode">
+                    <span class="inline-block mt-1 text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-200">
+                      Pola: <strong x-text="item.patternCode"></strong>
+                    </span>
+                  </template>
+                </td>
+                <td class="p-3 text-slate-600 text-xs font-medium" x-text="item.teknisi"></td>
+                <td class="p-3">
+                  <div class="text-xs font-semibold text-slate-800" x-text="'Est: Rp ' + parseInt(item.biayaEstimasi || 0).toLocaleString('id-ID')"></div>
+                  <div class="text-xs text-emerald-600 font-medium" x-text="'DP: Rp ' + parseInt(item.biayaDP || 0).toLocaleString('id-ID')"></div>
+                  <div class="text-xs text-amber-600 font-bold" x-text="'Sisa: Rp ' + Math.max(0, parseInt(item.biayaEstimasi || 0) - parseInt(item.biayaDP || 0)).toLocaleString('id-ID')"></div>
+                </td>
+                <td class="p-3">
+                  <span class="px-2.5 py-1 rounded-full text-xs font-bold capitalize"
+                        :class="{
+                          'bg-amber-100 text-amber-700': item.status === 'antrean',
+                          'bg-blue-100 text-blue-700': item.status === 'proses',
+                          'bg-emerald-100 text-emerald-700': item.status === 'selesai',
+                          'bg-purple-100 text-purple-700': item.status === 'diambil',
+                          'bg-red-100 text-red-700': item.status === 'batal'
+                        }"
+                        x-text="item.status">
+                  </span>
+                </td>
+                <td class="p-3 text-center">
+                  <div class="flex items-center justify-center gap-1">
+                    <button @click="sendWhatsApp(item)" title="Kirim WA" class="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg transition">
+                      <i class="fa-brands fa-whatsapp text-base"></i>
+                    </button>
+                    <button @click="openReceiptModal(item, 'penerimaan')" title="Cetak Struk" class="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition">
+                      <i class="fa-solid fa-print text-base"></i>
+                    </button>
+                    <button @click="editService(item)" title="Edit Service" class="p-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg transition">
+                      <i class="fa-solid fa-pen-to-square text-base"></i>
+                    </button>
+                    <button @click="confirmDelete(item)" title="Hapus Service" class="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition">
+                      <i class="fa-solid fa-trash-can text-base"></i>
+                    </button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-200 text-xs text-slate-700">
-              <template x-for="item in filteredServices" :key="item.id">
-                <tr class="hover:bg-slate-50 transition">
-                  <!-- Nota & Date -->
-                  <td class="p-3.5 pl-4 align-top">
-                    <div class="font-mono font-bold text-slate-900 text-sm" x-text="item.id"></div>
-                    <div class="text-[11px] text-slate-500 mt-0.5" x-text="formatDate(item.date)"></div>
-                    <div class="text-[10px] text-slate-400" x-text="'Teknisi: ' + item.technician"></div>
-                  </td>
+            </template>
 
-                  <!-- Customer & WA -->
-                  <td class="p-3.5 align-top">
-                    <div class="font-bold text-slate-900 text-sm" x-text="item.customerName"></div>
-                    <div class="font-mono text-cyan-600 mt-0.5 flex items-center gap-1">
-                      <i class="fa-brands fa-whatsapp text-emerald-500"></i>
-                      <span x-text="item.customerWa"></span>
-                    </div>
-                  </td>
-
-                  <!-- Phone & IMEI -->
-                  <td class="p-3.5 align-top">
-                    <div class="font-bold text-slate-800" x-text="item.phoneModel"></div>
-                    <div class="text-[11px] font-mono text-slate-500" x-show="item.imei" x-text="'IMEI: ' + item.imei"></div>
-                    <div class="text-[10px] text-slate-500" x-show="item.pattern" x-text="'PIN: ' + item.pattern"></div>
-                  </td>
-
-                  <!-- Damage -->
-                  <td class="p-3.5 align-top max-w-xs">
-                    <div class="font-medium text-slate-800" x-text="item.damage"></div>
-                    <div class="text-[10px] text-slate-500 italic mt-0.5" x-show="item.physicalCondition" x-text="'Fisik: ' + item.physicalCondition"></div>
-                    <div class="text-[10px] text-slate-400 mt-1" x-show="item.accessories && item.accessories.length" x-text="'Kelengkapan: ' + item.accessories.join(', ')"></div>
-                  </td>
-
-                  <!-- Cost & Balance -->
-                  <td class="p-3.5 align-top">
-                    <div class="font-bold text-slate-900" x-text="formatRupiah(item.cost)"></div>
-                    <div class="text-[10px] text-emerald-600" x-text="'DP: ' + formatRupiah(item.dp || 0)"></div>
-                    <div class="text-[11px] font-bold text-cyan-700 mt-0.5" x-text="'Sisa: ' + formatRupiah(item.cost - (item.dp || 0))"></div>
-                  </td>
-
-                  <!-- Status Selector -->
-                  <td class="p-3.5 align-top">
-                    <select :value="item.status" 
-                            @change="updateStatus(item, $event.target.value)"
-                            :class="getStatusSelectClass(item.status)"
-                            class="text-xs font-semibold rounded-lg px-2.5 py-1 border focus:outline-none transition">
-                      <option value="diterima">📥 Diterima / Antrean</option>
-                      <option value="pengecekan">🔍 Pengecekan</option>
-                      <option value="sparepart">📦 Menunggu Sparepart</option>
-                      <option value="proses">🛠️ Dalam Perbaikan</option>
-                      <option value="selesai">✅ Selesai (Ready)</option>
-                      <option value="diambil">🤝 Diambil &amp; Lunas</option>
-                      <option value="batal">❌ Dibatalkan</option>
-                    </select>
-                  </td>
-
-                  <!-- Action Buttons -->
-                  <td class="p-3.5 pr-4 align-top text-center">
-                    <div class="flex items-center justify-center space-x-1">
-                      <!-- Print Button -->
-                      <button @click="openReceiptModal(item, item.status === 'diambil' ? 'pelunasan' : 'penerimaan')" 
-                              title="Cetak Struk 58mm" 
-                              class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition">
-                        <i class="fa-solid fa-print"></i>
-                      </button>
-
-                      <!-- WhatsApp Button -->
-                      <button @click="openWaModal(item)" 
-                              title="Kirim Pesan WhatsApp" 
-                              class="w-8 h-8 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-700 flex items-center justify-center transition">
-                        <i class="fa-brands fa-whatsapp text-sm"></i>
-                      </button>
-
-                      <!-- Edit Button -->
-                      <button @click="editService(item)" 
-                              title="Edit Data" 
-                              class="w-8 h-8 rounded-lg bg-cyan-100 hover:bg-cyan-200 text-cyan-700 flex items-center justify-center transition">
-                        <i class="fa-solid fa-pen-to-square text-xs"></i>
-                      </button>
-
-                      <!-- Delete Button (Replaced with Custom Confirmation Modal) -->
-                      <button @click="promptDeleteService(item)" 
-                              title="Hapus Service" 
-                              class="w-8 h-8 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 flex items-center justify-center transition">
-                        <i class="fa-solid fa-trash text-xs"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </template>
-
-              <template x-if="filteredServices.length === 0">
-                <tr>
-                  <td colspan="7" class="p-8 text-center text-slate-400">
-                    <i class="fa-solid fa-folder-open text-4xl mb-2 text-slate-300"></i>
-                    <p class="text-sm">Tidak ada data service yang cocok dengan pencarian / filter.</p>
-                  </td>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-        </div>
+            <template x-if="filteredServices.length === 0">
+              <tr>
+                <td colspan="7" class="p-8 text-center text-slate-400">
+                  <i class="fa-solid fa-folder-open text-4xl mb-2 block"></i>
+                  <span>Tidak ada data transaksi service yang ditemukan</span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
       </div>
     </div>
-
-    <!-- TAB 4: LAPORAN KEUANGAN & EXPORT EXCEL -->
-    <div x-show="activeTab === 'reports'" class="space-y-6">
-      
-      <!-- Report Header Card -->
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <h2 class="text-xl font-bold text-slate-900 flex items-center gap-2">
-            <i class="fa-solid fa-chart-column text-emerald-600"></i>
-            <span>Laporan Financial &amp; Export Excel</span>
-          </h2>
-          <p class="text-xs text-slate-500 mt-1">Rekap pendapatan, biaya modal sparepart, laba bersih, &amp; backup database lokal.</p>
-        </div>
-        
-        <div class="flex items-center gap-2 flex-wrap">
-          <button @click="exportToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center gap-2 shadow-md transition">
-            <i class="fa-solid fa-file-excel"></i>
-            <span>Download File Excel (.xlsx)</span>
-          </button>
-          <button @click="exportJsonBackup()" class="bg-slate-800 hover:bg-slate-900 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center gap-2 shadow-md transition">
-            <i class="fa-solid fa-download"></i>
-            <span>Backup Data JSON</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Financial Metrics Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div class="bg-white p-5 rounded-2xl border border-slate-200">
-          <span class="text-xs font-semibold text-slate-500 uppercase">Total Omset Gross</span>
-          <div class="text-2xl font-bold text-slate-900 mt-2" x-text="formatRupiah(stats.totalRevenue)"></div>
-          <p class="text-[11px] text-slate-500 mt-1">Penerimaan dari unit selesai/lunas</p>
-        </div>
-
-        <div class="bg-white p-5 rounded-2xl border border-slate-200">
-          <span class="text-xs font-semibold text-slate-500 uppercase">Total Modal Sparepart</span>
-          <div class="text-2xl font-bold text-rose-600 mt-2" x-text="formatRupiah(stats.totalModal)"></div>
-          <p class="text-[11px] text-slate-500 mt-1">Pengeluaran komponen HP</p>
-        </div>
-
-        <div class="bg-white p-5 rounded-2xl border border-slate-200 bg-gradient-to-br from-emerald-50 to-white">
-          <span class="text-xs font-semibold text-emerald-800 uppercase">Estimasi Laba Bersih</span>
-          <div class="text-2xl font-bold text-emerald-700 mt-2" x-text="formatRupiah(stats.netProfit)"></div>
-          <p class="text-[11px] text-emerald-600 mt-1">Omset - Total Modal</p>
-        </div>
-
-        <div class="bg-white p-5 rounded-2xl border border-slate-200">
-          <span class="text-xs font-semibold text-slate-500 uppercase">Piutang / Belum Lunas</span>
-          <div class="text-2xl font-bold text-cyan-700 mt-2" x-text="formatRupiah(stats.unpaidBalance)"></div>
-          <p class="text-[11px] text-slate-500 mt-1">Sisa bayar unit masih proses</p>
-        </div>
-      </div>
-
-      <!-- Backup & Restore Box -->
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <h3 class="font-bold text-slate-800 text-sm mb-2 flex items-center gap-2">
-          <i class="fa-solid fa-database text-cyan-600"></i>
-          <span>Pemulihan Data &amp; Backup Sistem</span>
-        </h3>
-        <p class="text-xs text-slate-500 mb-4">Anda dapat melakukan impor kembali file JSON cadangan untuk memulihkan seluruh riwayat nota &amp; profil toko.</p>
-
-        <div class="flex items-center gap-4 flex-wrap">
-          <label class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer border border-slate-300 transition flex items-center gap-2">
-            <i class="fa-solid fa-upload"></i>
-            <span>Restore / Import JSON</span>
-            <input type="file" @change="importJsonBackup($event)" accept=".json" class="hidden">
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 5: PENGATURAN TOKO -->
-    <div x-show="activeTab === 'settings'" class="space-y-6">
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 max-w-3xl mx-auto">
-        <h2 class="text-xl font-bold text-slate-900 border-b border-slate-100 pb-4 mb-6 flex items-center gap-2">
-          <i class="fa-solid fa-store text-cyan-600"></i>
-          <span>Pengaturan Profil Toko &amp; Cetakan Struk</span>
-        </h2>
-
-        <form @submit.prevent="saveStoreSettings()" class="space-y-4">
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Toko / Counter <span class="text-red-500">*</span></label>
-            <input type="text" x-model="store.name" required class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">Alamat Toko Lengkap</label>
-            <input type="text" x-model="store.address" required class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">No. Telp / WhatsApp Toko</label>
-              <input type="text" x-model="store.phone" required class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">Slogan / Sub-Header Struk</label>
-              <input type="text" x-model="store.headerNote" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:outline-none">
-            </div>
-          </div>
-
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">Catatan Garansi &amp; Ketentuan Service (Footer Struk 58mm)</label>
-            <textarea x-model="store.footerNote" rows="4" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-cyan-500 focus:outline-none"></textarea>
-            <p class="text-[10px] text-slate-400 mt-1">Gunakan enter untuk membuat baris baru pada cetakan nota thermal.</p>
-          </div>
-
-          <!-- Master Data Teknisi -->
-          <div>
-            <label class="block text-xs font-semibold text-slate-700 mb-1">Daftar Nama Teknisi</label>
-            <div class="flex items-center gap-2 mb-2">
-              <input type="text" x-model="newTechName" placeholder="Tambah teknisi baru..." class="flex-grow border border-slate-300 rounded-xl px-3 py-1.5 text-sm">
-              <button type="button" @click="addTechnician()" class="bg-cyan-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold">+ Tambah</button>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <template x-for="(tech, index) in store.technicians" :key="index">
-                <span class="bg-slate-100 border border-slate-300 px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-2">
-                  <span x-text="tech"></span>
-                  <button type="button" @click="removeTechnician(index)" class="text-red-500 hover:text-red-700 text-xs">×</button>
-                </span>
-              </template>
-            </div>
-          </div>
-
-          <div class="pt-4 border-t border-slate-200 flex justify-end gap-3">
-            <button type="button" @click="loadSampleData()" class="bg-amber-100 text-amber-800 hover:bg-amber-200 px-4 py-2 rounded-xl text-xs font-bold transition">
-              <i class="fa-solid fa-rotate-left mr-1"></i> Reset Sample Data
-            </button>
-            <button type="submit" class="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded-xl text-sm font-semibold transition">
-              <i class="fa-solid fa-floppy-disk mr-1"></i> Simpan Pengaturan Toko
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-
   </main>
 
-  <!-- MODAL CUSTOM CONFIRM HAPUS SERVICE (TANPA NATIVE CONFIRM/ALERT) -->
-  <div x-show="showDeleteModal" 
-       x-transition.opacity
-       class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" 
-       style="display: none;">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border border-slate-200" @click.away="showDeleteModal = false">
-      <div class="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4 text-xl">
-        <i class="fa-solid fa-triangle-exclamation"></i>
-      </div>
-      <h3 class="text-lg font-bold text-slate-900">Konfirmasi Hapus Data</h3>
-      <p class="text-xs text-slate-500 mt-2 leading-relaxed">
-        Apakah Anda yakin ingin menghapus transaksi service <strong class="text-slate-800 font-mono" x-text="itemToDelete?.id"></strong>?
-      </p>
-      
-      <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 my-4 text-left text-xs space-y-1">
-        <div class="flex justify-between"><span class="text-slate-500">Pelanggan:</span> <strong class="text-slate-800" x-text="itemToDelete?.customerName"></strong></div>
-        <div class="flex justify-between"><span class="text-slate-500">Tipe HP:</span> <strong class="text-slate-800" x-text="itemToDelete?.phoneModel"></strong></div>
-        <div class="flex justify-between"><span class="text-slate-500">Total Biaya:</span> <strong class="text-emerald-700" x-text="formatRupiah(itemToDelete?.cost)"></strong></div>
+  <!-- FORM MODAL (ADD / EDIT SERVICE) -->
+  <div x-show="showFormModal" class="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" style="display: none;">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden my-8" @click.outside="showFormModal = false">
+      <div class="bg-indigo-700 text-white px-6 py-4 flex items-center justify-between">
+        <h3 class="font-bold text-lg" x-text="isEdit ? 'Edit Data Service' : 'Penerimaan Service Baru'"></h3>
+        <button @click="showFormModal = false" class="text-indigo-200 hover:text-white text-xl font-bold">&times;</button>
       </div>
 
-      <p class="text-[11px] text-red-500 font-semibold mb-4">Tindakan ini tidak dapat dibatalkan!</p>
+      <form @submit.prevent="saveForm()" class="p-6 space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">No. Nota (Otomatis)</label>
+            <input type="text" x-model="form.id" readonly class="w-full bg-slate-100 border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold text-slate-700">
+          </div>
 
-      <div class="flex items-center justify-center gap-3">
-        <button @click="showDeleteModal = false" class="w-1/2 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-100 transition">
-          Batal
-        </button>
-        <button @click="confirmDeleteService()" class="w-1/2 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5">
-          <i class="fa-solid fa-trash text-xs"></i>
-          <span>Hapus Sekarang</span>
-        </button>
-      </div>
-    </div>
-  </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Tanggal Masuk</label>
+            <input type="date" x-model="form.tanggalMasuk" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
 
-  <!-- MODAL PREVIEW STRUK THERMAL 58mm (Panda PRJ-R58D) -->
-  <div x-show="showReceiptModal" 
-       x-transition.opacity
-       class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" 
-       style="display: none;">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200" @click.away="showReceiptModal = false">
-      
-      <!-- Modal Header -->
-      <div class="bg-slate-900 text-white p-4 flex items-center justify-between">
-        <h3 class="font-bold text-sm flex items-center gap-2">
-          <i class="fa-solid fa-print text-cyan-400"></i>
-          <span>Preview Cetak Struk Panda PRJ-R58D (58mm)</span>
-        </h3>
-        <button @click="showReceiptModal = false" class="text-slate-400 hover:text-white">
-          <i class="fa-solid fa-xmark text-lg"></i>
-        </button>
-      </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nama Pelanggan *</label>
+            <input type="text" x-model="form.nama" required placeholder="Contoh: Budi Santoso" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
 
-      <!-- Receipt Type Selector Toggle -->
-      <div class="p-3 bg-slate-100 border-b border-slate-200 flex items-center justify-center gap-2">
-        <button @click="receiptType = 'penerimaan'" 
-                :class="receiptType === 'penerimaan' ? 'bg-cyan-600 text-white font-bold shadow' : 'bg-white text-slate-700 border border-slate-300'" 
-                class="px-3 py-1.5 rounded-lg text-xs transition">
-          Nota Penerimaan (Titip HP)
-        </button>
-        <button @click="receiptType = 'pelunasan'" 
-                :class="receiptType === 'pelunasan' ? 'bg-emerald-600 text-white font-bold shadow' : 'bg-white text-slate-700 border border-slate-300'" 
-                class="px-3 py-1.5 rounded-lg text-xs transition">
-          Nota Pelunasan (Pengambilan)
-        </button>
-      </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">No. WhatsApp *</label>
+            <input type="text" x-model="form.phone" required placeholder="08123456789" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
 
-      <!-- Thermal Printable Container (Actual 58mm Paper Simulation) -->
-      <div class="p-6 bg-slate-200 flex justify-center max-h-[60vh] overflow-y-auto">
-        <div id="printable-receipt-wrapper">
-          <div id="thermal-receipt" class="bg-white text-black p-3 font-mono text-[11px] leading-tight w-[58mm] shadow-md border border-slate-300">
-            
-            <!-- Toko Header -->
-            <div class="text-center pb-2 border-b border-dashed border-black">
-              <div class="font-bold text-xs uppercase" x-text="store.name"></div>
-              <div class="text-[9px] leading-tight" x-text="store.address"></div>
-              <div class="text-[9px]" x-text="'Telp/WA: ' + store.phone"></div>
-              <div class="text-[8px] italic mt-0.5" x-text="store.headerNote"></div>
-            </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Merk / Tipe HP *</label>
+            <input type="text" x-model="form.tipeHp" required placeholder="Samsung A52, iPhone 11..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
 
-            <!-- Receipt Type Label -->
-            <div class="py-1 text-center my-1.5 bg-slate-100 border-y border-dashed border-black font-bold text-[10px] uppercase">
-              <span x-text="receiptType === 'penerimaan' ? '*** NOTA PENERIMAAN SERVICE ***' : '*** NOTA PELUNASAN SERVICE ***'"></span>
-            </div>
-
-            <!-- Nota Metadata -->
-            <div class="space-y-0.5 text-[10px]">
-              <div class="flex justify-between"><span>No. Nota :</span> <strong x-text="selectedService?.id"></strong></div>
-              <div class="flex justify-between"><span>Tgl Masuk :</span> <span x-text="formatDate(selectedService?.date)"></span></div>
-              <div x-show="receiptType === 'pelunasan'" class="flex justify-between"><span>Tgl Ambil :</span> <span x-text="formatDate(new Date().toISOString())"></span></div>
-              <div class="flex justify-between"><span>Pelanggan :</span> <strong x-text="selectedService?.customerName"></strong></div>
-              <div class="flex justify-between"><span>No. WA    :</span> <span x-text="selectedService?.customerWa"></span></div>
-              <div class="flex justify-between"><span>Teknisi   :</span> <span x-text="selectedService?.technician"></span></div>
-            </div>
-
-            <!-- Device Specs -->
-            <div class="border-t border-dashed border-black my-1.5 pt-1">
-              <div class="font-bold text-[10px] uppercase">PERANGKAT:</div>
-              <div class="font-bold text-[11px]" x-text="selectedService?.phoneModel"></div>
-              <div class="text-[9px]" x-show="selectedService?.imei" x-text="'IMEI: ' + selectedService?.imei"></div>
-              <div class="text-[9px]" x-show="selectedService?.pattern" x-text="'PIN/Pola: ' + selectedService?.pattern"></div>
-            </div>
-
-            <!-- Accessories -->
-            <div class="border-t border-dashed border-black my-1.5 pt-1">
-              <div class="font-bold text-[9px] uppercase">KELENGKAPAN:</div>
-              <div class="text-[9px]" x-text="selectedService?.accessories && selectedService?.accessories.length ? selectedService?.accessories.join(', ') : '-'"></div>
-            </div>
-
-            <!-- Damage Description -->
-            <div class="border-t border-dashed border-black my-1.5 pt-1">
-              <div class="font-bold text-[9px] uppercase">KERUSAKAN / KONDISI:</div>
-              <div class="text-[10px] font-bold" x-text="selectedService?.damage"></div>
-              <div class="text-[8px] italic" x-show="selectedService?.physicalCondition" x-text="'Fisik: ' + selectedService?.physicalCondition"></div>
-            </div>
-
-            <!-- Costs Breakdown -->
-            <div class="border-t border-dashed border-black my-1.5 pt-1 space-y-0.5 text-[10px]">
-              <div class="flex justify-between font-bold">
-                <span>Total Estimasi Biaya:</span>
-                <span x-text="formatRupiah(selectedService?.cost || 0)"></span>
-              </div>
-              <div class="flex justify-between">
-                <span>Uang Muka (DP):</span>
-                <span x-text="formatRupiah(selectedService?.dp || 0)"></span>
-              </div>
-              <div class="flex justify-between font-bold text-[11px] pt-1 border-t border-dotted border-black">
-                <span x-text="receiptType === 'penerimaan' ? 'Est. Sisa Bayar:' : 'LUNAS / TOTAL:'"></span>
-                <span x-text="formatRupiah((selectedService?.cost || 0) - (selectedService?.dp || 0))"></span>
-              </div>
-            </div>
-
-            <!-- Terms & Warranty Footer -->
-            <div class="border-t border-dashed border-black my-2 pt-1 text-[8px] leading-tight text-center whitespace-pre-line" x-text="store.footerNote">
-            </div>
-
-            <!-- Signature Section -->
-            <div class="mt-3 pt-1 border-t border-dotted border-black flex justify-between text-[8px] text-center">
-              <div class="w-1/2">
-                <p>Pelanggan,</p>
-                <div class="h-6"></div>
-                <p class="font-bold" x-text="'( ' + (selectedService?.customerName || '') + ' )'"></p>
-              </div>
-              <div class="w-1/2">
-                <p>Hormat Kami,</p>
-                <div class="h-6"></div>
-                <p class="font-bold" x-text="'( ' + store.name + ' )'"></p>
-              </div>
-            </div>
-
-            <div class="text-center text-[7px] mt-2">
-              *** PRJ-R58D Thermal Receipt ***
-            </div>
-
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">IMEI / Serial Number</label>
+            <input type="text" x-model="form.imei" placeholder="Opsional" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
           </div>
         </div>
-      </div>
 
-      <!-- Modal Footer -->
-      <div class="p-4 bg-white border-t border-slate-200 flex items-center justify-between">
-        <button @click="showReceiptModal = false" class="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700">
-          Tutup
-        </button>
-        <button @click="printReceipt()" class="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg">
-          <i class="fa-solid fa-print"></i>
-          <span>Cetak Sekarang (Panda PRJ-R58D)</span>
-        </button>
-      </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Kerusakan / Keluhan *</label>
+          <textarea x-model="form.kerusakan" required rows="2" placeholder="LCD Pecah, Gagal Booting, Mati Total..." class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"></textarea>
+        </div>
 
+        <!-- 3x3 Pattern Lock Visual Selector -->
+        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs font-bold text-slate-700 uppercase">Pola Kunci layar (Klik Titik 1-9)</label>
+            <button type="button" @click="form.patternCode = ''" class="text-xs text-red-600 hover:underline font-semibold">Reset Pola</button>
+          </div>
+          <div class="flex items-center gap-6">
+            <div class="grid grid-cols-3 gap-2 w-32 h-32 bg-white p-2 rounded-lg border border-slate-300 shadow-inner">
+              <template x-for="num in [1,2,3,4,5,6,7,8,9]" :key="num">
+                <button type="button" @click="togglePatternDot(num)" 
+                        :class="form.patternCode.split('-').includes(String(num)) ? 'bg-indigo-600 text-white font-bold scale-105' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'"
+                        class="w-8 h-8 rounded-full flex items-center justify-center text-xs transition duration-150 shadow-sm"
+                        x-text="num">
+                </button>
+              </template>
+            </div>
+            <div class="flex-1 text-xs text-slate-500">
+              <div class="font-semibold text-slate-700">Urutan Pola:</div>
+              <div class="font-mono text-base font-bold text-indigo-600 mt-1" x-text="form.patternCode || 'Belum diisi'"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Estimasi Biaya (Rp)</label>
+            <input type="number" x-model.number="form.biayaEstimasi" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Modal Sparepart (Rp)</label>
+            <input type="number" x-model.number="form.biayaModal" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Uang Muka / DP (Rp)</label>
+            <input type="number" x-model.number="form.biayaDP" min="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Penanggung Jawab Teknisi</label>
+            <select x-model="form.teknisi" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+              <option value="Teknisi 1">Teknisi 1</option>
+              <option value="Teknisi 2">Teknisi 2</option>
+              <option value="Teknisi Utama">Teknisi Utama</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Status Perbaikan</label>
+            <select x-model="form.status" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+              <option value="antrean">Antrean (Masuk)</option>
+              <option value="proses">Sedang Dikerjakan</option>
+              <option value="selesai">Selesai (Siap Ambil)</option>
+              <option value="diambil">Diambil Pelanggan</option>
+              <option value="batal">Batal / Unrepairable</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+          <button type="button" @click="showFormModal = false" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition">Batal</button>
+          <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold shadow-md transition">Simpan Service</button>
+        </div>
+      </form>
     </div>
   </div>
 
-  <!-- MODAL INTEGRASI WHATSAPP -->
-  <div x-show="showWaModal" 
-       x-transition.opacity
-       class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4" 
-       style="display: none;">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200" @click.away="showWaModal = false">
+  <!-- THERMAL RECEIPT MODAL (PANDA PRJ-R58D / RP210A) -->
+  <div x-show="showReceiptModal" class="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" style="display: none;">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" @click.outside="showReceiptModal = false">
+      <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+        <h3 class="font-bold text-sm">Preview Struk 58mm Thermal</h3>
+        <button @click="showReceiptModal = false" class="text-slate-400 hover:text-white font-bold">&times;</button>
+      </div>
+
+      <div class="p-6 bg-slate-200 flex justify-center">
+        <!-- 58mm Receipt View -->
+        <div id="thermal-receipt" class="w-[58mm] bg-white p-3 shadow-md font-mono text-[11px] leading-tight text-black border border-slate-300">
+          <div class="text-center font-bold text-xs uppercase" x-text="storeConfig.name"></div>
+          <div class="text-center text-[10px]" x-text="storeConfig.address"></div>
+          <div class="text-center text-[10px]" x-text="'Telp/WA: ' + storeConfig.phone"></div>
+          <div class="text-center my-1 border-b border-dashed border-black"></div>
+          
+          <div class="text-center font-bold uppercase my-1" x-text="receiptType === 'penerimaan' ? 'NOTA PENERIMAAN SERVICE' : 'NOTA PELUNASAN SERVICE'"></div>
+          <div class="text-center my-1 border-b border-dashed border-black"></div>
+
+          <template x-if="selectedService">
+            <div>
+              <div class="flex justify-between"><span class="font-bold">No Nota:</span><span x-text="selectedService.id"></span></div>
+              <div class="flex justify-between"><span>Tanggal:</span><span x-text="selectedService.tanggalMasuk"></span></div>
+              <div class="flex justify-between"><span>Nama:</span><span class="font-bold" x-text="selectedService.nama"></span></div>
+              <div class="flex justify-between"><span>No. WA:</span><span x-text="selectedService.phone"></span></div>
+              <div class="flex justify-between"><span>Tipe HP:</span><span class="font-bold" x-text="selectedService.tipeHp"></span></div>
+              <template x-if="selectedService.imei">
+                <div class="flex justify-between"><span>IMEI/SN:</span><span x-text="selectedService.imei"></span></div>
+              </template>
+              <div class="flex justify-between"><span>Teknisi:</span><span x-text="selectedService.teknisi"></span></div>
+
+              <div class="my-1 border-b border-dashed border-black"></div>
+              <div class="font-bold">Kerusakan:</div>
+              <div class="whitespace-normal break-words" x-text="selectedService.kerusakan"></div>
+
+              <template x-if="selectedService.patternCode">
+                <div class="mt-1 font-bold">Pola Kunci: <span x-text="selectedService.patternCode"></span></div>
+              </template>
+
+              <div class="my-1 border-b border-dashed border-black"></div>
+              <div class="flex justify-between"><span>Estimasi:</span><span x-text="'Rp ' + parseInt(selectedService.biayaEstimasi || 0).toLocaleString('id-ID')"></span></div>
+              <div class="flex justify-between"><span>Uang Muka:</span><span x-text="'Rp ' + parseInt(selectedService.biayaDP || 0).toLocaleString('id-ID')"></span></div>
+              <div class="flex justify-between font-bold text-xs mt-1">
+                <span>SISA:</span>
+                <span x-text="receiptType === 'penerimaan' ? 'Rp ' + Math.max(0, parseInt(selectedService.biayaEstimasi || 0) - parseInt(selectedService.biayaDP || 0)).toLocaleString('id-ID') : '0 (LUNAS)'"></span>
+              </div>
+            </div>
+          </template>
+
+          <div class="my-1 border-b border-dashed border-black"></div>
+          <div class="text-center text-[9px] mt-2 leading-tight" x-text="storeConfig.garansiInfo"></div>
+          <div class="text-center text-[10px] mt-2 font-bold">Terima kasih atas kepercayaannya</div>
+        </div>
+      </div>
+
+      <div class="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap gap-2 justify-end">
+        <button @click="showReceiptModal = false" class="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold">Tutup</button>
+        <button @click="printReceipt()" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5">
+          <i class="fa-solid fa-print"></i> Cetak Standard (58mm)
+        </button>
+        <button @click="printDirectBluetooth()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5">
+          <i class="fa-solid fa-bluetooth text-sm"></i> Direct Bluetooth (RP210A / Panda)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DELETE CONFIRMATION MODAL -->
+  <div x-show="showDeleteModal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4" style="display: none;">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center" @click.outside="showDeleteModal = false">
+      <div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center text-xl mx-auto mb-3">
+        <i class="fa-solid fa-trash-can"></i>
+      </div>
+      <h3 class="font-bold text-lg text-slate-800 mb-1">Hapus Data Service?</h3>
+      <p class="text-xs text-slate-500 mb-4">Tindakan ini permanen. Data yang dihapus tidak dapat dikembalikan.</p>
       
-      <div class="bg-emerald-600 text-white p-4 flex items-center justify-between">
-        <h3 class="font-bold text-sm flex items-center gap-2">
-          <i class="fa-brands fa-whatsapp text-lg"></i>
-          <span>Kirim Notifikasi WhatsApp Pelanggan</span>
-        </h3>
-        <button @click="showWaModal = false" class="text-emerald-100 hover:text-white">
-          <i class="fa-solid fa-xmark text-lg"></i>
-        </button>
+      <div class="flex items-center justify-center gap-3">
+        <button @click="showDeleteModal = false" class="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold transition">Batal</button>
+        <button @click="executeDelete()" class="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold shadow-md transition">Hapus Permanen</button>
       </div>
-
-      <div class="p-6 space-y-4">
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1">Pilih Template Pesan:</label>
-          <select x-model="selectedWaTemplate" @change="generateWaText()" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-none">
-            <option value="masuk">1. Tanda Terima Service (Penerimaan HP)</option>
-            <option value="selesai">2. Update HP Selesai &amp; Siap Diambil</option>
-            <option value="proses">3. Status Progress / Pengecekan Unit</option>
-            <option value="batal">4. Perbaikan Dibatalkan / Gagal Repair</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1">Preview Teks WhatsApp:</label>
-          <textarea x-model="waMessageText" rows="7" class="w-full border border-slate-300 rounded-xl p-3 text-xs font-mono bg-slate-50 focus:ring-2 focus:ring-emerald-500 focus:outline-none"></textarea>
-        </div>
-      </div>
-
-      <div class="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-        <button @click="showWaModal = false" class="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700">
-          Batal
-        </button>
-        <button @click="sendWaMessage()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition">
-          <i class="fa-brands fa-whatsapp text-base"></i>
-          <span>Buka WhatsApp &amp; Kirim</span>
-        </button>
-      </div>
-
     </div>
   </div>
 
-  <!-- Application Logic (AlpineJS Data Store & Methods) -->
+  <!-- STORE SETTINGS MODAL -->
+  <div x-show="showStoreModal" class="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" style="display: none;">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" @click.outside="showStoreModal = false">
+      <div class="bg-slate-800 text-white px-6 py-4 flex items-center justify-between">
+        <h3 class="font-bold text-lg">Pengaturan Toko & Backup</h3>
+        <button @click="showStoreModal = false" class="text-slate-400 hover:text-white font-bold">&times;</button>
+      </div>
+
+      <form @submit.prevent="saveStoreConfig()" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Nama Toko Service</label>
+          <input type="text" x-model="storeConfig.name" required class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Slogan / Header Nota</label>
+          <input type="text" x-model="storeConfig.slogan" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Alamat Toko</label>
+          <input type="text" x-model="storeConfig.address" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">No. Telepon / WhatsApp</label>
+          <input type="text" x-model="storeConfig.phone" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Syarat & Ketentuan Garansi Footer Struk</label>
+          <textarea x-model="storeConfig.garansiInfo" rows="3" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"></textarea>
+        </div>
+
+        <div class="border-t border-slate-200 pt-4 space-y-2">
+          <div class="text-xs font-bold text-slate-600 uppercase">Management Data Data JSON</div>
+          <div class="flex gap-2">
+            <button type="button" @click="backupData()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-2">
+              <i class="fa-solid fa-download"></i> Backup Data JSON
+            </button>
+            <label class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer">
+              <i class="fa-solid fa-upload"></i> Restore Data JSON
+              <input type="file" @change="restoreData($event)" accept=".json" class="hidden">
+            </label>
+          </div>
+          <button type="button" @click="resetSampleData()" class="w-full py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold border border-red-200">
+            Reset ke Data Sample Awal
+          </button>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+          <button type="button" @click="showStoreModal = false" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold">Tutup</button>
+          <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold shadow-md">Simpan Pengaturan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT APPLICATION LOGIC -->
   <script>
     function serviceApp() {
       return {
-        activeTab: 'dashboard',
-        showReceiptModal: false,
-        showWaModal: false,
-        showDeleteModal: false,
-        isEditMode: false,
-        itemToDelete: null,
-        
-        // Settings / Store Profile State
-        store: {
-          name: 'BAROKAH CELL & SERVICE HP',
-          address: 'Jl. Raya Merdeka No. 88, Bandung',
-          phone: '081234567890',
-          headerNote: 'Spesialis Service HP Android & iPhone | Bergaransi',
-          footerNote: '1. Garansi 30 hari untuk sparepart pengganti (Non Human Error/Kena Air).\n2. Barang yang tidak diambil >30 hari di luar tanggung jawab toko.\n3. Wajib membawa nota fisik / WA ini saat pengambilan.',
-          technicians: ['Budi (Senior)', 'Andi (Hardware)', 'Rian (Software)']
-        },
-        newTechName: '',
-
-        // Service Form Model
-        form: {
-          id: '',
-          date: new Date().toISOString().slice(0, 10),
-          customerName: '',
-          customerWa: '',
-          phoneModel: '',
-          imei: '',
-          pattern: '',
-          accessories: ['Unit HP'],
-          damage: '',
-          physicalCondition: '',
-          cost: 0,
-          modal: 0,
-          dp: 0,
-          status: 'diterima',
-          technician: 'Budi (Senior)'
-        },
-
-        availableAccessories: ['Unit HP', 'Charger', 'Kartu Garansi', 'Memory Card', 'SIM Card', 'Softcase/Hardcase', 'Dusbook', 'Kabel Data'],
-
-        // Main Services Database Array
+        // App State Properties
         services: [],
+        searchQuery: '',
+        statusFilter: 'all',
+        showFormModal: false,
+        showStoreModal: false,
+        showReceiptModal: false,
+        showDeleteModal: false,
+        showToastMsg: false,
+        toastMessage: '',
+        toastIcon: 'fa-solid fa-circle-check text-emerald-500',
 
-        // Active Selected Item for Modal & Printing
         selectedService: null,
         receiptType: 'penerimaan',
-        selectedWaTemplate: 'masuk',
-        waMessageText: '',
+        deletingId: null,
+        isEdit: false,
 
-        // Filters State
-        searchQuery: '',
-        filterStatus: 'all',
-
-        // Notification Toast State
-        toast: { show: false, message: '', icon: '' },
-
-        initApp() {
-          this.loadData();
+        form: {
+          id: '',
+          nama: '',
+          phone: '',
+          tipeHp: '',
+          imei: '',
+          kerusakan: '',
+          kelengkapan: [],
+          patternCode: '',
+          biayaEstimasi: 0,
+          biayaModal: 0,
+          biayaDP: 0,
+          teknisi: 'Teknisi 1',
+          status: 'antrean',
+          catatanInternal: '',
+          tanggalMasuk: '',
+          tanggalSelesai: ''
         },
 
-        // --- Storage Management ---
-        loadData() {
-          try {
-            const savedStore = localStorage.getItem('hp_service_store');
-            if (savedStore) this.store = JSON.parse(savedStore);
+        storeConfig: {
+          name: 'EXPRESS SERVICE HP',
+          slogan: 'Spesialis Repair Android & iPhone',
+          address: 'Jl. Pemuda No. 45, Kotaku',
+          phone: '081234567890',
+          garansiInfo: '* Garansi berlaku 7 hari setelah pengambilan unit. Nota wajib dibawa.'
+        },
 
-            const isInitialized = localStorage.getItem('hp_service_initialized');
-            if (!isInitialized) {
-              // Pertama kali buka aplikasi, muat sample data 1x saja
-              this.loadSampleData();
-            } else {
-              // Jika sudah diinisialisasi, baca data dari localStorage (meskipun kosong [])
-              const savedServices = localStorage.getItem('hp_service_items');
-              this.services = savedServices ? JSON.parse(savedServices) : [];
-            }
-          } catch (e) {
-            console.error('Failed to parse localStorage data', e);
-            this.services = [];
+        sampleData: [
+          {
+            id: 'TRX-20261109-001',
+            nama: 'Budi Santoso',
+            phone: '081234567890',
+            tipeHp: 'Samsung Galaxy A52',
+            imei: '864293048201948',
+            kerusakan: 'LCD Pecah & Sentuh Tidak Merespons',
+            kelengkapan: ['Unit HP', 'SIM Card'],
+            patternCode: '1-2-3-6-9',
+            biayaEstimasi: 450000,
+            biayaModal: 280000,
+            biayaDP: 100000,
+            teknisi: 'Teknisi 1',
+            status: 'antrean',
+            catatanInternal: 'Sparepart LCD sudah di-order',
+            tanggalMasuk: '2026-11-09',
+            tanggalSelesai: ''
+          },
+          {
+            id: 'TRX-20261108-002',
+            nama: 'Siti Aminah',
+            phone: '085712345678',
+            tipeHp: 'iPhone 11',
+            imei: '359201948271049',
+            kerusakan: 'Baterai Health 65% / Cepat Drop',
+            kelengkapan: ['Unit HP'],
+            patternCode: '7-8-9',
+            biayaEstimasi: 350000,
+            biayaModal: 190000,
+            biayaDP: 350000,
+            teknisi: 'Teknisi Utama',
+            status: 'selesai',
+            catatanInternal: 'Baterai original OEM dipasang',
+            tanggalMasuk: '2026-11-08',
+            tanggalSelesai: '2026-11-09'
           }
-        },
+        ],
 
-        saveData() {
-          try {
-            localStorage.setItem('hp_service_store', JSON.stringify(this.store));
-            localStorage.setItem('hp_service_items', JSON.stringify(this.services));
+        // App Initialization
+        init() {
+          const storedServices = localStorage.getItem('services');
+          if (!localStorage.getItem('hp_service_initialized')) {
+            this.services = [...this.sampleData];
+            localStorage.setItem('services', JSON.stringify(this.services));
             localStorage.setItem('hp_service_initialized', 'true');
-          } catch (e) {
-            console.error('Failed to save to localStorage', e);
+          } else {
+            try {
+              this.services = storedServices ? JSON.parse(storedServices) : [];
+            } catch (e) {
+              this.services = [];
+            }
+          }
+
+          const storedConfig = localStorage.getItem('storeConfig');
+          if (storedConfig) {
+            try {
+              this.storeConfig = Object.assign({}, this.storeConfig, JSON.parse(storedConfig));
+            } catch (e) {}
           }
         },
 
-        showToast(msg, icon = 'fa-solid fa-circle-check text-emerald-400') {
-          this.toast.message = msg;
-          this.toast.icon = icon;
-          this.toast.show = true;
-          setTimeout(() => { this.toast.show = false; }, 3000);
+        saveServices() {
+          localStorage.setItem('services', JSON.stringify(this.services));
         },
 
-        // --- Auto Invoice ID Generator ---
-        generateInvoiceId() {
-          const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-          const countToday = this.services.filter(s => s.date && s.date.replace(/-/g, '') === dateStr).length + 1;
-          const pad = String(countToday).padStart(3, '0');
-          return `TRX-${dateStr}-${pad}`;
+        saveStoreConfig() {
+          localStorage.setItem('storeConfig', JSON.stringify(this.storeConfig));
+          this.showStoreModal = false;
+          this.showToast('Pengaturan toko berhasil disimpan');
         },
 
         openNewForm() {
-          this.isEditMode = false;
+          const today = new Date();
+          const dateStr = today.getFullYear() +
+            String(today.getMonth() + 1).padStart(2, '0') +
+            String(today.getDate()).padStart(2, '0');
+          const count = this.services.length + 1;
+          const autoId = 'TRX-' + dateStr + '-' + String(count).padStart(3, '0');
+
+          this.isEdit = false;
           this.form = {
-            id: this.generateInvoiceId(),
-            date: new Date().toISOString().slice(0, 10),
-            customerName: '',
-            customerWa: '',
-            phoneModel: '',
+            id: autoId,
+            nama: '',
+            phone: '',
+            tipeHp: '',
             imei: '',
-            pattern: '',
-            accessories: ['Unit HP'],
-            damage: '',
-            physicalCondition: '',
-            cost: 0,
-            modal: 0,
-            dp: 0,
-            status: 'diterima',
-            technician: this.store.technicians[0] || 'Budi'
+            kerusakan: '',
+            kelengkapan: ['Unit HP'],
+            patternCode: '',
+            biayaEstimasi: 0,
+            biayaModal: 0,
+            biayaDP: 0,
+            teknisi: 'Teknisi 1',
+            status: 'antrean',
+            catatanInternal: '',
+            tanggalMasuk: new Date().toISOString().split('T')[0],
+            tanggalSelesai: ''
           };
-          this.activeTab = 'input';
-        },
-
-        addPatternDot(n) {
-          if (!this.form.pattern) {
-            this.form.pattern = String(n);
-          } else if (!this.form.pattern.includes(String(n))) {
-            this.form.pattern += '-' + n;
-          }
-        },
-
-        clearPattern() {
-          this.form.pattern = '';
-        },
-
-        saveService() {
-          // Format phone number to international standard (62)
-          let cleanWa = this.form.customerWa.replace(/\D/g, '');
-          if (cleanWa.startsWith('0')) cleanWa = '62' + cleanWa.slice(1);
-          if (!cleanWa.startsWith('62')) cleanWa = '62' + cleanWa;
-          this.form.customerWa = cleanWa;
-
-          if (this.isEditMode) {
-            const index = this.services.findIndex(s => s.id === this.form.id);
-            if (index !== -1) {
-              this.services[index] = { ...this.form };
-              this.showToast('Data service berhasil diperbarui!');
-            }
-          } else {
-            this.services.unshift({ ...this.form });
-            this.showToast('Service baru berhasil ditambahkan!');
-          }
-
-          this.saveData();
-          this.selectedService = { ...this.form };
-          this.openReceiptModal(this.selectedService, 'penerimaan');
-          this.activeTab = 'list';
+          this.showFormModal = true;
         },
 
         editService(item) {
-          this.isEditMode = true;
+          this.isEdit = true;
           this.form = JSON.parse(JSON.stringify(item));
-          this.activeTab = 'input';
+          if (!this.form.kelengkapan) this.form.kelengkapan = [];
+          this.showFormModal = true;
         },
 
-        // --- Custom Confirmation Delete Logic (Custom Modal, Bebas confirm()) ---
-        promptDeleteService(item) {
-          this.itemToDelete = item;
+        saveForm() {
+          if (!this.form.nama || !this.form.tipeHp) {
+            this.showToast('Nama pelanggan & Tipe HP wajib diisi!', 'fa-solid fa-triangle-exclamation text-amber-500');
+            return;
+          }
+
+          if (this.isEdit) {
+            const idx = this.services.findIndex(s => s.id === this.form.id);
+            if (idx !== -1) {
+              this.services[idx] = { ...this.form };
+            }
+          } else {
+            this.services.unshift({ ...this.form });
+          }
+
+          this.saveServices();
+          this.showFormModal = false;
+          this.showToast(this.isEdit ? 'Data service berhasil diperbarui' : 'Transaksi service baru berhasil ditambahkan');
+        },
+
+        confirmDelete(item) {
+          this.deletingId = item.id;
+          this.selectedService = item;
           this.showDeleteModal = true;
         },
 
-        confirmDeleteService() {
-          if (!this.itemToDelete) return;
-          const targetId = this.itemToDelete.id;
-          this.services = this.services.filter(s => s.id !== targetId);
-          this.saveData();
+        executeDelete() {
+          if (!this.deletingId) return;
+          this.services = this.services.filter(s => s.id !== this.deletingId);
+          this.saveServices();
           this.showDeleteModal = false;
-          this.itemToDelete = null;
-          this.showToast(`Data service ${targetId} berhasil dihapus!`, 'fa-solid fa-trash text-red-400');
+          this.deletingId = null;
+          this.showToast('Data service berhasil dihapus permanen');
         },
 
-        updateStatus(item, newStatus) {
-          item.status = newStatus;
-          if (newStatus === 'diambil') {
-            item.completedDate = new Date().toISOString().slice(0, 10);
-          }
-          this.saveData();
-          this.showToast(`Status ${item.id} diubah ke ${this.getStatusLabel(newStatus)}`);
+        resetSampleData() {
+          this.services = [...this.sampleData];
+          this.saveServices();
+          localStorage.setItem('hp_service_initialized', 'true');
+          this.showToast('Data dikembalikan ke sample awal');
         },
 
-        // --- Modal & Printing Handlers ---
         openReceiptModal(item, type = 'penerimaan') {
           this.selectedService = item;
           this.receiptType = type;
@@ -1219,318 +705,357 @@
         },
 
         printReceipt() {
-          window.print();
-        },
-
-        // --- WhatsApp Integration ---
-        openWaModal(item) {
-          this.selectedService = item;
-          this.selectedWaTemplate = item.status === 'selesai' ? 'selesai' : 'masuk';
-          this.generateWaText();
-          this.showWaModal = true;
-        },
-
-        generateWaText() {
           if (!this.selectedService) return;
-          const s = this.selectedService;
-          const sisa = (s.cost || 0) - (s.dp || 0);
-
-          if (this.selectedWaTemplate === 'masuk') {
-            this.waMessageText = `Halo *${s.customerName}*,\nTerima kasih telah mempercayakan service HP di *${this.store.name}*.\n\n📌 *BUKTI TANDA TERIMA SERVICE*\n• No Nota: *${s.id}*\n• Perangkat: *${s.phoneModel}*\n• Kerusakan: ${s.damage}\n• Est. Biaya: ${this.formatRupiah(s.cost)}\n• Uang Muka (DP): ${this.formatRupiah(s.dp)}\n• Est. Sisa Bayar: *${this.formatRupiah(sisa)}*\n\nMohon simpan pesan ini saat pengambilan unit. Terima kasih! 🙏`;
-          } else if (this.selectedWaTemplate === 'selesai') {
-            this.waMessageText = `Halo *${s.customerName}*, kabar baik! 🎉\nHP *${s.phoneModel}* (Nota: *${s.id}*) Anda telah *SELESAI* diperbaiki dan siap diambil di toko *${this.store.name}*.\n\n💰 *Rincian Pelunasan:*\n• Total Biaya: ${this.formatRupiah(s.cost)}\n• Uang Muka DP: ${this.formatRupiah(s.dp)}\n• *SISA PELUNASAN: ${this.formatRupiah(sisa)}*\n\n📍 Alamat Toko: ${this.store.address}\nTerima kasih! 🙏`;
-          } else if (this.selectedWaTemplate === 'proses') {
-            this.waMessageText = `Halo *${s.customerName}*,\nUpdate perbaikan HP *${s.phoneModel}* (Nota: *${s.id}*) saat ini statusnya: *[${this.getStatusLabel(s.status).toUpperCase()}]*.\nKami akan menginfokan kembali jika perbaikan telah rampung. Terima kasih.`;
-          } else if (this.selectedWaTemplate === 'batal') {
-            this.waMessageText = `Halo *${s.customerName}*,\nKami menginformasikan bahwa perbaikan HP *${s.phoneModel}* (Nota: *${s.id}*) *DIBATALKAN / TIDAK BISA DIPERBAIKI*.\nUnit HP dapat diambil kembali di toko kami. Terima kasih.`;
+          const printArea = document.getElementById('printArea');
+          const receiptEl = document.getElementById('thermal-receipt');
+          
+          if (printArea && receiptEl) {
+            printArea.innerHTML = receiptEl.outerHTML;
+            setTimeout(() => {
+              window.print();
+              setTimeout(() => {
+                printArea.innerHTML = '';
+              }, 1000);
+            }, 150);
+          } else {
+            window.print();
           }
         },
 
-        sendWaMessage() {
-          if (!this.selectedService?.customerWa) return;
-          const encoded = encodeURIComponent(this.waMessageText);
-          const url = `https://wa.me/${this.selectedService.customerWa}?text=${encoded}`;
-          window.open(url, '_blank');
-          this.showWaModal = false;
-        },
-
-        // --- Financial & Computed Properties ---
-        get activeQueueCount() {
-          return this.services.filter(s => ['diterima', 'pengecekan', 'sparepart', 'proses'].includes(s.status)).length;
-        },
-
-        get activeQueueServices() {
-          return this.services.filter(s => ['diterima', 'pengecekan', 'sparepart', 'proses'].includes(s.status));
-        },
-
-        get filteredServices() {
-          return this.services.filter(item => {
-            const matchSearch = !this.searchQuery || 
-              item.id.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-              item.customerName.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-              item.phoneModel.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-              (item.imei && item.imei.includes(this.searchQuery));
-
-            const matchStatus = this.filterStatus === 'all' || item.status === this.filterStatus;
-
-            return matchSearch && matchStatus;
-          });
-        },
-
-        get stats() {
-          const total = this.services.length;
-          const inProgress = this.services.filter(s => ['diterima', 'pengecekan', 'sparepart', 'proses'].includes(s.status)).length;
-          const ready = this.services.filter(s => s.status === 'selesai').length;
-          const completed = this.services.filter(s => s.status === 'diambil').length;
-
-          // Financial calculations
-          const completedItems = this.services.filter(s => s.status === 'diambil' || s.status === 'selesai');
-          const totalRevenue = completedItems.reduce((sum, s) => sum + (s.cost || 0), 0);
-          const totalModal = completedItems.reduce((sum, s) => sum + (s.modal || 0), 0);
-          const netProfit = totalRevenue - totalModal;
-
-          const unpaidBalance = this.services
-            .filter(s => s.status !== 'diambil' && s.status !== 'batal')
-            .reduce((sum, s) => sum + ((s.cost || 0) - (s.dp || 0)), 0);
-
-          return { total, inProgress, ready, completed, totalRevenue, totalModal, netProfit, unpaidBalance };
-        },
-
-        countByStatus(st) {
-          return this.services.filter(s => s.status === st).length;
-        },
-
-        // --- Export & Excel Helpers ---
-        exportToExcel() {
-          if (this.services.length === 0) {
-            this.showToast('Tidak ada data service untuk diexport!', 'fa-solid fa-circle-exclamation text-amber-400');
+        // Native Direct Web Bluetooth Printer Engine
+        async printDirectBluetooth() {
+          if (!window.isSecureContext || !navigator.bluetooth) {
+            this.showToast(
+              'Direct Web Bluetooth butuh HTTPS (misal GitHub Pages) atau Localhost via Chrome. Jika memakai IP HTTP lokal, gunakan "Cetak Standard".',
+              'fa-solid fa-triangle-exclamation text-amber-500'
+            );
             return;
           }
 
-          const exportData = this.filteredServices.map((item, idx) => ({
-            'No': idx + 1,
-            'No Nota': item.id,
-            'Tgl Masuk': item.date,
-            'Nama Pelanggan': item.customerName,
-            'No WhatsApp': item.customerWa,
-            'Merk & Tipe HP': item.phoneModel,
-            'IMEI / SN': item.imei || '-',
-            'PIN / Pola': item.pattern || '-',
-            'Kelengkapan': (item.accessories || []).join(', '),
-            'Kerusakan': item.damage,
-            'Kondisi Fisik': item.physicalCondition || '-',
-            'Status': this.getStatusLabel(item.status),
-            'Total Biaya (Rp)': item.cost,
-            'Modal Part (Rp)': item.modal || 0,
-            'DP (Rp)': item.dp || 0,
-            'Sisa Bayar (Rp)': item.cost - (item.dp || 0),
-            'Teknisi': item.technician
-          }));
+          try {
+            this.showToast('Mencari printer Bluetooth (RP210A / Thermal)...', 'fa-solid fa-bluetooth text-blue-500');
+            
+            const optionalServices = [
+              '000018f0-0000-1000-8000-00805f9b34fb',
+              '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+              '49535343-fe7d-41aa-97b2-670f548fbe12',
+              '0000e700-0000-1000-8000-00805f9b34fb',
+              '0000af00-0000-1000-8000-00805f9b34fb',
+              '0000ff00-0000-1000-8000-00805f9b34fb',
+              '00001101-0000-1000-8000-00805f9b34fb',
+              '0000e000-0000-1000-8000-00805f9b34fb',
+              '0000ff02-0000-1000-8000-00805f9b34fb'
+            ];
 
-          const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const device = await navigator.bluetooth.requestDevice({
+              acceptAllDevices: true,
+              optionalServices: optionalServices
+            });
+
+            if (!device) return;
+
+            this.showToast(`Menghubungkan ke ${device.name || 'Printer Thermal'}...`, 'fa-solid fa-wifi text-indigo-500');
+            
+            const server = await device.gatt.connect();
+            let writeChar = null;
+
+            try {
+              const services = await server.getPrimaryServices();
+              for (const service of services) {
+                try {
+                  const chars = await service.getCharacteristics();
+                  for (const c of chars) {
+                    if (c.properties.write || c.properties.writeWithoutResponse) {
+                      writeChar = c;
+                      break;
+                    }
+                  }
+                } catch (e) {}
+                if (writeChar) break;
+              }
+            } catch (serviceErr) {
+              for (const uuid of optionalServices) {
+                try {
+                  const service = await server.getPrimaryService(uuid);
+                  const chars = await service.getCharacteristics();
+                  for (const c of chars) {
+                    if (c.properties.write || c.properties.writeWithoutResponse) {
+                      writeChar = c;
+                      break;
+                    }
+                  }
+                  if (writeChar) break;
+                } catch (e) {}
+              }
+            }
+
+            if (!writeChar) {
+              throw new Error('Karakteristik Bluetooth printer tidak ditemukan.');
+            }
+
+            const escBytes = this.generateEscPosBytes();
+            const CHUNK_SIZE = 20;
+            for (let i = 0; i < escBytes.length; i += CHUNK_SIZE) {
+              const chunk = escBytes.slice(i, i + CHUNK_SIZE);
+              if (writeChar.properties.writeWithoutResponse) {
+                await writeChar.writeValueWithoutResponse(chunk);
+              } else {
+                await writeChar.writeValue(chunk);
+              }
+              await new Promise(resolve => setTimeout(resolve, 20));
+            }
+
+            this.showToast('Struk berhasil dicetak via Bluetooth!', 'fa-solid fa-circle-check text-emerald-500');
+          } catch (err) {
+            console.error('Bluetooth Print Error:', err);
+            if (err.name !== 'NotFoundError') {
+              this.showToast('Gagal Bluetooth: ' + (err.message || 'Koneksi terputus'), 'fa-solid fa-triangle-exclamation text-amber-500');
+            }
+          }
+        },
+
+        generateEscPosBytes() {
+          if (!this.selectedService) return new Uint8Array();
+          const s = this.selectedService;
+          const cfg = this.storeConfig;
+          const isPenerimaan = this.receiptType === 'penerimaan';
+
+          const encoder = new TextEncoder();
+          const bytes = [];
+
+          const addStr = (str) => {
+            const b = encoder.encode(str);
+            for (let i = 0; i < b.length; i++) bytes.push(b[i]);
+          };
+          const addCmd = (cmdArray) => {
+            for (let i = 0; i < cmdArray.length; i++) bytes.push(cmdArray[i]);
+          };
+
+          addCmd([0x1B, 0x40]);
+          addCmd([0x1B, 0x61, 0x01]);
+          addCmd([0x1B, 0x45, 0x01]);
+          addStr((cfg.name || 'TOKO SERVICE') + '\n');
+          addCmd([0x1B, 0x45, 0x00]);
+          addStr((cfg.address || '') + '\n');
+          addStr('Telp/WA: ' + (cfg.phone || '') + '\n');
+          addStr('--------------------------------\n');
+          
+          addCmd([0x1B, 0x45, 0x01]);
+          addStr(isPenerimaan ? 'NOTA PENERIMAAN SERVICE\n' : 'NOTA PELUNASAN SERVICE\n');
+          addCmd([0x1B, 0x45, 0x00]);
+          addStr('--------------------------------\n');
+
+          addCmd([0x1B, 0x61, 0x00]);
+          addStr('No Nota  : ' + s.id + '\n');
+          addStr('Tgl Masuk: ' + s.tanggalMasuk + '\n');
+          addStr('Pelanggan: ' + s.nama + '\n');
+          addStr('No. WA   : ' + s.phone + '\n');
+          addStr('Tipe HP  : ' + s.tipeHp + '\n');
+          if (s.imei) addStr('IMEI/SN  : ' + s.imei + '\n');
+          addStr('Teknisi  : ' + s.teknisi + '\n');
+          addStr('--------------------------------\n');
+          addStr('Kerusakan:\n' + s.kerusakan + '\n');
+          if (s.patternCode) {
+            addStr('Pola Kunci : ' + s.patternCode + '\n');
+          }
+          addStr('--------------------------------\n');
+
+          const estimasi = parseInt(s.biayaEstimasi) || 0;
+          const dp = parseInt(s.biayaDP) || 0;
+          const sisa = Math.max(0, estimasi - dp);
+
+          addStr('Est. Biaya : Rp ' + estimasi.toLocaleString('id-ID') + '\n');
+          addStr('Uang Muka  : Rp ' + dp.toLocaleString('id-ID') + '\n');
+          addCmd([0x1B, 0x45, 0x01]);
+          addStr('SISA BAYAR : Rp ' + (isPenerimaan ? sisa.toLocaleString('id-ID') : '0 (LUNAS)') + '\n');
+          addCmd([0x1B, 0x45, 0x00]);
+          addStr('--------------------------------\n');
+
+          addCmd([0x1B, 0x61, 0x01]);
+          addStr((cfg.slogan || '') + '\n\n');
+          addStr('* SYARAT & KETENTUAN *\n');
+          addStr((cfg.garansiInfo || '') + '\n');
+          addStr('Terima kasih atas kepercayaan Anda\n\n');
+
+          addCmd([0x1B, 0x64, 0x05]);
+
+          return new Uint8Array(bytes);
+        },
+
+        sendWhatsApp(item) {
+          if (!item.phone) {
+            this.showToast('Nomor WhatsApp pelanggan belum diisi!', 'fa-solid fa-triangle-exclamation text-amber-500');
+            return;
+          }
+          let cleanPhone = item.phone.replace(/[^0-9]/g, '');
+          if (cleanPhone.startsWith('0')) {
+            cleanPhone = '62' + cleanPhone.slice(1);
+          }
+
+          const est = parseInt(item.biayaEstimasi) || 0;
+          const dp = parseInt(item.biayaDP) || 0;
+          const sisa = Math.max(0, est - dp);
+
+          let message = `Halo Kak *${item.nama}*,\n` +
+            `Info dari *${this.storeConfig.name}* mengenai perbaikan HP *${item.tipeHp}* (Nota: ${item.id}):\n\n` +
+            `Status: *${item.status.toUpperCase()}*\n` +
+            `Biaya Estimasi: Rp ${est.toLocaleString('id-ID')}\n` +
+            `DP: Rp ${dp.toLocaleString('id-ID')}\n` +
+            `Sisa Pelunasan: Rp ${sisa.toLocaleString('id-ID')}\n\n`;
+
+          if (item.status === 'selesai') {
+            message += `Unit HP Anda sudah SELESAI diperbaiki dan siap diambil. Terima kasih!`;
+          } else {
+            message += `Perbaikan sedang diproses oleh teknisi kami (${item.teknisi}). Kami akan kabari jika sudah selesai.`;
+          }
+
+          const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+          window.open(url, '_blank');
+        },
+
+        exportExcel() {
+          if (typeof XLSX === 'undefined') {
+            this.showToast('Library Excel belum siap', 'fa-solid fa-triangle-exclamation text-amber-500');
+            return;
+          }
+
+          const dataToExport = this.filteredServices.map((item, index) => {
+            const est = parseInt(item.biayaEstimasi) || 0;
+            const modal = parseInt(item.biayaModal) || 0;
+            const dp = parseInt(item.biayaDP) || 0;
+            const sisa = Math.max(0, est - dp);
+            const laba = item.status === 'selesai' || item.status === 'diambil' ? (est - modal) : 0;
+
+            return {
+              'No': index + 1,
+              'No Nota': item.id,
+              'Tanggal Masuk': item.tanggalMasuk,
+              'Pelanggan': item.nama,
+              'No. WhatsApp': item.phone,
+              'Tipe HP': item.tipeHp,
+              'IMEI/SN': item.imei || '-',
+              'Kerusakan': item.kerusakan,
+              'Teknisi': item.teknisi,
+              'Status': item.status.toUpperCase(),
+              'Biaya Estimasi': est,
+              'Biaya Modal': modal,
+              'Uang Muka (DP)': dp,
+              'Sisa Bayar': sisa,
+              'Estimasi Laba': laba,
+              'Tanggal Selesai': item.tanggalSelesai || '-'
+            };
+          });
+
+          const worksheet = XLSX.utils.json_to_sheet(dataToExport);
           const workbook = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(workbook, worksheet, "Data Service HP");
-
-          worksheet['!cols'] = [
-            { wch: 4 }, { wch: 18 }, { wch: 12 }, { wch: 20 }, { wch: 15 },
-            { wch: 22 }, { wch: 18 }, { wch: 12 }, { wch: 25 }, { wch: 30 },
-            { wch: 20 }, { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 18 }
-          ];
-
-          XLSX.writeFile(workbook, `Laporan_Service_HP_${new Date().toISOString().slice(0, 10)}.xlsx`);
-          this.showToast('File Excel berhasil didownload!');
+          XLSX.utils.book_append_sheet(workbook, worksheet, 'Data Service');
+          XLSX.writeFile(workbook, `Laporan_Service_HP_${new Date().toISOString().split('T')[0]}.xlsx`);
+          this.showToast('Data berhasil di-export ke Excel!');
         },
 
-        exportJsonBackup() {
-          const data = { store: this.store, services: this.services, date: new Date().toISOString() };
-          const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
-          const dlAnchor = document.createElement('a');
-          dlAnchor.setAttribute("href", dataStr);
-          dlAnchor.setAttribute("download", `backup_service_hp_${new Date().toISOString().slice(0, 10)}.json`);
-          dlAnchor.click();
-          this.showToast('Backup data JSON berhasil!');
+        backupData() {
+          const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
+            services: this.services,
+            storeConfig: this.storeConfig
+          }, null, 2));
+          const downloadAnchor = document.createElement('a');
+          downloadAnchor.setAttribute("href", dataStr);
+          downloadAnchor.setAttribute("download", `Backup_Service_HP_${new Date().toISOString().split('T')[0]}.json`);
+          document.body.appendChild(downloadAnchor);
+          downloadAnchor.click();
+          downloadAnchor.remove();
+          this.showToast('File backup JSON berhasil diunduh');
         },
 
-        importJsonBackup(event) {
+        restoreData(event) {
           const file = event.target.files[0];
           if (!file) return;
           const reader = new FileReader();
           reader.onload = (e) => {
             try {
-              const res = JSON.parse(e.target.result);
-              if (res.services && Array.isArray(res.services)) {
-                this.services = res.services;
-                if (res.store) this.store = res.store;
-                this.saveData();
-                this.showToast('Data berhasil dipulihkan!');
-              } else {
-                this.showToast('Format file JSON tidak valid!', 'fa-solid fa-circle-xmark text-red-400');
+              const parsed = JSON.parse(e.target.result);
+              if (parsed.services && Array.isArray(parsed.services)) {
+                this.services = parsed.services;
+                this.saveServices();
               }
+              if (parsed.storeConfig) {
+                this.storeConfig = parsed.storeConfig;
+                this.saveStoreConfig();
+              }
+              localStorage.setItem('hp_service_initialized', 'true');
+              this.showToast('Data berhasil di-restore!');
             } catch (err) {
-              this.showToast('Gagal membaca file backup JSON!', 'fa-solid fa-circle-xmark text-red-400');
+              this.showToast('Format file JSON tidak valid', 'fa-solid fa-triangle-exclamation text-amber-500');
             }
           };
           reader.readAsText(file);
         },
 
-        saveStoreSettings() {
-          this.saveData();
-          this.showToast('Pengaturan Toko Berhasil Disimpan!');
+        showToast(msg, icon = 'fa-solid fa-circle-check text-emerald-500') {
+          this.toastMessage = msg;
+          this.toastIcon = icon;
+          this.showToastMsg = true;
+          setTimeout(() => {
+            this.showToastMsg = false;
+          }, 3500);
         },
 
-        addTechnician() {
-          if (this.newTechName.trim()) {
-            this.store.technicians.push(this.newTechName.trim());
-            this.newTechName = '';
-            this.saveData();
+        togglePatternDot(num) {
+          const str = String(num);
+          let current = this.form.patternCode ? this.form.patternCode.split('-') : [];
+          if (!current.includes(str)) {
+            current.push(str);
           }
+          this.form.patternCode = current.join('-');
         },
 
-        removeTechnician(index) {
-          this.store.technicians.splice(index, 1);
-          this.saveData();
+        get filteredServices() {
+          return this.services.filter(item => {
+            const matchStatus = this.statusFilter === 'all' || item.status === this.statusFilter;
+            const query = this.searchQuery.toLowerCase();
+            const matchQuery = !query ||
+              (item.nama && item.nama.toLowerCase().includes(query)) ||
+              (item.phone && item.phone.toLowerCase().includes(query)) ||
+              (item.tipeHp && item.tipeHp.toLowerCase().includes(query)) ||
+              (item.id && item.id.toLowerCase().includes(query)) ||
+              (item.teknisi && item.teknisi.toLowerCase().includes(query));
+            return matchStatus && matchQuery;
+          });
         },
 
-        loadSampleData() {
-          this.services = [
-            {
-              id: 'TRX-20261108-001',
-              date: '2026-11-08',
-              customerName: 'Ahmad Subagja',
-              customerWa: '6281298765432',
-              phoneModel: 'iPhone 11 128GB Black',
-              imei: '354891029384751',
-              pattern: '1-2-5-8',
-              accessories: ['Unit HP', 'Charger'],
-              damage: 'LCD Pecah & Touchscreen Hilang Respon',
-              physicalCondition: 'Bezel Lecet Pemakaian',
-              cost: 750000,
-              modal: 450000,
-              dp: 200000,
-              status: 'selesai',
-              technician: 'Budi (Senior)'
-            },
-            {
-              id: 'TRX-20261108-002',
-              date: '2026-11-08',
-              customerName: 'Siti Aminah',
-              customerWa: '6285712345678',
-              phoneModel: 'Samsung Galaxy A52',
-              imei: '869401029384112',
-              pattern: 'PIN 123456',
-              accessories: ['Unit HP'],
-              damage: 'Mati Total Kena Air Laut',
-              physicalCondition: 'Backcover Retak Halus',
-              cost: 500000,
-              modal: 200000,
-              dp: 0,
-              status: 'proses',
-              technician: 'Andi (Hardware)'
-            },
-            {
-              id: 'TRX-20261107-003',
-              date: '2026-11-07',
-              customerName: 'Rizky Pratama',
-              customerWa: '6282133445566',
-              phoneModel: 'Xiaomi Redmi Note 10',
-              imei: '863291048293019',
-              pattern: '1-4-7-8-9',
-              accessories: ['Unit HP', 'Dusbook', 'SIM Card'],
-              damage: 'Konektor Charger Dol / Tidak Mengisi',
-              physicalCondition: 'Mulus Terpasang Garskin',
-              cost: 150000,
-              modal: 50000,
-              dp: 150000,
-              status: 'diambil',
-              completedDate: '2026-11-08',
-              technician: 'Rian (Software)'
-            },
-            {
-              id: 'TRX-20261106-004',
-              date: '2026-11-06',
-              customerName: 'Dewi Sartika',
-              customerWa: '6281377889900',
-              phoneModel: 'OPPO Reno 6 5G',
-              imei: '864501928374650',
-              pattern: '1-5-9',
-              accessories: ['Unit HP'],
-              damage: 'Baterai Kembung & Bootloop Restart',
-              physicalCondition: 'Backcover Mengangkat Sedikit',
-              cost: 280000,
-              modal: 140000,
-              dp: 100000,
-              status: 'sparepart',
-              technician: 'Andi (Hardware)'
+        get stats() {
+          let totalOmset = 0;
+          let totalModal = 0;
+          let totalPiutang = 0;
+          let countAntrean = 0;
+          let countSelesai = 0;
+
+          this.services.forEach(item => {
+            const est = parseInt(item.biayaEstimasi) || 0;
+            const modal = parseInt(item.biayaModal) || 0;
+            const dp = parseInt(item.biayaDP) || 0;
+
+            if (item.status === 'antrean' || item.status === 'proses') {
+              countAntrean++;
+              totalPiutang += Math.max(0, est - dp);
+            } else if (item.status === 'selesai' || item.status === 'diambil') {
+              countSelesai++;
+              totalOmset += est;
+              totalModal += modal;
             }
-          ];
-          localStorage.setItem('hp_service_initialized', 'true');
-          this.saveData();
-          this.showToast('Sample data telah dimuat!');
-        },
+          });
 
-        // --- Formatters & Helpers ---
-        formatRupiah(number) {
-          return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(number || 0);
-        },
-
-        formatDate(dateStr) {
-          if (!dateStr) return '-';
-          const d = new Date(dateStr);
-          return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-        },
-
-        getStatusLabel(st) {
-          const map = {
-            'diterima': 'Diterima / Antrean',
-            'pengecekan': 'Pengecekan',
-            'sparepart': 'Menunggu Sparepart',
-            'proses': 'Dalam Perbaikan',
-            'selesai': 'Selesai (Ready)',
-            'diambil': 'Diambil & Lunas',
-            'batal': 'Dibatalkan'
+          return {
+            totalUnit: this.services.length,
+            antrean: countAntrean,
+            selesai: countSelesai,
+            omset: totalOmset,
+            modal: totalModal,
+            labaNet: totalOmset - totalModal,
+            piutang: totalPiutang
           };
-          return map[st] || st;
-        },
-
-        getStatusBadgeClass(st) {
-          const map = {
-            'diterima': 'bg-blue-100 text-blue-800 border border-blue-200',
-            'pengecekan': 'bg-amber-100 text-amber-800 border border-amber-200',
-            'sparepart': 'bg-orange-100 text-orange-800 border border-orange-200',
-            'proses': 'bg-purple-100 text-purple-800 border border-purple-200',
-            'selesai': 'bg-emerald-100 text-emerald-800 border border-emerald-200',
-            'diambil': 'bg-teal-100 text-teal-800 border border-teal-200',
-            'batal': 'bg-red-100 text-red-800 border border-red-200'
-          };
-          return map[st] || 'bg-slate-100 text-slate-800';
-        },
-
-        getStatusSelectClass(st) {
-          const map = {
-            'diterima': 'bg-blue-50 text-blue-800 border-blue-300',
-            'pengecekan': 'bg-amber-50 text-amber-800 border-amber-300',
-            'sparepart': 'bg-orange-50 text-orange-800 border-orange-300',
-            'proses': 'bg-purple-50 text-purple-800 border-purple-300',
-            'selesai': 'bg-emerald-50 text-emerald-800 border-emerald-300',
-            'diambil': 'bg-teal-50 text-teal-800 border-teal-300',
-            'batal': 'bg-red-50 text-red-800 border-red-300'
-          };
-          return map[st] || 'bg-white text-slate-800';
-        },
-
-        getStatusBadgeHTML(st) {
-          const map = {
-            'diterima': '<i class="fa-solid fa-inbox"></i> Antrean',
-            'pengecekan': '<i class="fa-solid fa-magnifying-glass"></i> Cek Unit',
-            'sparepart': '<i class="fa-solid fa-box-open"></i> Wait Part',
-            'proses': '<i class="fa-solid fa-screwdriver-wrench"></i> Perbaikan',
-            'selesai': '<i class="fa-solid fa-circle-check"></i> Ready Ambil',
-            'diambil': '<i class="fa-solid fa-user-check"></i> Selesai & Lunas',
-            'batal': '<i class="fa-solid fa-xmark"></i> Batal'
-          };
-          return map[st] || st;
         }
-      }
+      };
     }
   </script>
 </body>
