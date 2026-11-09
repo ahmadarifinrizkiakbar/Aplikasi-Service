@@ -1398,7 +1398,7 @@
             addStr(store.footerNote + '\n');
           }
                 
-          addCmd([0x1B, 0x64, 0x01]); // Feed 4 lines
+          addCmd([0x1B, 0x64, 0x02]); // Feed 4 lines
 
           return new Uint8Array(bytes);
         },
